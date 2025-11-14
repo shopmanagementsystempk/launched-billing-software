@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Card, Button, Form, Alert, Table, Modal, Badge, Row, Col } from 'react-bootstrap';
 import { useAuth } from '../contexts/AuthContext';
 import { collection, setDoc, updateDoc, query, where, getDocs, doc, deleteDoc } from 'firebase/firestore';
@@ -38,11 +38,7 @@ const StaffManagement = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  useEffect(() => {
-    fetchStaffList();
-  }, []);
-
-  const fetchStaffList = async () => {
+  const fetchStaffList = useCallback(async () => {
     if (!currentUser) return;
     
     try {
@@ -59,7 +55,12 @@ const StaffManagement = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    fetchStaffList();
+  }, [fetchStaffList]);
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
