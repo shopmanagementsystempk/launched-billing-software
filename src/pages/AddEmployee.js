@@ -10,7 +10,7 @@ import PageHeader from '../components/PageHeader';
 import { v4 as uuidv4 } from 'uuid';
 
 const AddEmployee = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, activeShopId } = useAuth();
   const navigate = useNavigate();
   
   // Get translations for attributes
@@ -44,6 +44,10 @@ const AddEmployee = () => {
       setError(getTranslatedAttr('requiredFieldsError'));
       return;
     }
+    if (!activeShopId) {
+      setError('Please select a branch before adding employees.');
+      return;
+    }
     
     try {
       setLoading(true);
@@ -57,7 +61,7 @@ const AddEmployee = () => {
         ...formData,
         salary: parseFloat(formData.salary) || 0,
         joiningDate: formData.joiningDate || new Date().toISOString().split('T')[0],
-        shopId: currentUser.uid,
+        shopId: activeShopId,
         qrCodeId: qrCodeId,
         createdAt: new Date().toISOString()
       });

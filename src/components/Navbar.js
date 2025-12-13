@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Navbar, Nav, Container, Button, Offcanvas, Collapse } from 'react-bootstrap';
+import { Navbar, Nav, Container, Button, Offcanvas, Collapse, Form, InputGroup, Modal } from 'react-bootstrap';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -8,11 +8,30 @@ import Translate from './Translate';
 import '../styles/sidebar.css';
 
 const MainNavbar = () => {
-  const { currentUser, logout, shopData, staffData, isStaff, isGuest } = useAuth();
+  const { 
+    currentUser, 
+    logout, 
+    shopData, 
+    staffData, 
+    isStaff, 
+    isGuest,
+    branches,
+    activeBranchId,
+    primaryShopId,
+    selectBranch,
+    addBranch,
+    deleteBranch
+  } = useAuth();
   const { language } = useLanguage();
   const navigate = useNavigate();
   const [showSidebar, setShowSidebar] = useState(false);
   const location = useLocation();
+  const [newBranchName, setNewBranchName] = useState('');
+  const [branchError, setBranchError] = useState('');
+  const [addingBranch, setAddingBranch] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [branchToDelete, setBranchToDelete] = useState(null);
+  const [deletingBranch, setDeletingBranch] = useState(false);
   
   // Check if we're on an expenses page to auto-open the menu
   const isExpensesPage = location.pathname === '/expenses' || location.pathname === '/add-expense' || location.pathname === '/expense-categories';
@@ -28,6 +47,11 @@ const MainNavbar = () => {
   const isEmployeesPage = location.pathname === '/employees' || location.pathname === '/add-employee';
   const [employeesOpen, setEmployeesOpen] = useState(isEmployeesPage);
   const [employeesOpenMobile, setEmployeesOpenMobile] = useState(isEmployeesPage);
+
+  // Check if we're on a contacts page to auto-open the menu
+  const isContactsPage = location.pathname === '/customer-information' || location.pathname === '/supplier-information';
+  const [contactsOpen, setContactsOpen] = useState(isContactsPage);
+  const [contactsOpenMobile, setContactsOpenMobile] = useState(isContactsPage);
 
   // Auto-open expenses menu when on expenses pages
   useEffect(() => {
@@ -52,6 +76,14 @@ const MainNavbar = () => {
       setEmployeesOpenMobile(true);
     }
   }, [isEmployeesPage]);
+
+  // Auto-open contacts menu when on contacts pages
+  useEffect(() => {
+    if (isContactsPage) {
+      setContactsOpen(true);
+      setContactsOpenMobile(true);
+    }
+  }, [isContactsPage]);
 
   const handleLogout = () => {
     logout()
@@ -150,6 +182,10 @@ const MainNavbar = () => {
     },
     badge: {
       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      color: '#ffffff'
+    },
+    contacts: {
+      background: 'linear-gradient(135deg, #2196F3 0%, #21CBF3 100%)',
       color: '#ffffff'
     }
   };
@@ -289,17 +325,228 @@ const MainNavbar = () => {
     );
   };
 
+  const renderContactsMenu = (closeSidebar = false, isMobile = false) => {
+    const isOpen = isMobile ? contactsOpenMobile : contactsOpen;
+    const setIsOpen = isMobile ? setContactsOpenMobile : setContactsOpen;
+    const iconStyle = googleIconPalette['contacts'] || defaultGoogleIconStyle;
+    const isContactsActive = isActive('/customer-information') || isActive('/supplier-information');
+
+    return (
+      <>
+        <div 
+          className={`sidebar-link ${isContactsActive ? 'active' : ''}`}
+          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+          onClick={() => setIsOpen(!isOpen)}
+        >
+          <span className="sidebar-icon" style={iconStyle}>
+            <span className="material-icons-outlined google-icon">contacts</span>
+          </span>
+          <span className="sidebar-text">Contacts</span>
+          <i className={`bi ${isOpen ? 'bi-chevron-down' : 'bi-chevron-right'} ms-auto`} style={{ fontSize: '0.8rem' }}></i>
+        </div>
+        <Collapse in={isOpen}>
+          <div className="sidebar-submenu">
+            {renderSubNavItem('/customer-information', 'Customer Information', closeSidebar)}
+            {renderSubNavItem('/supplier-information', 'Supplier Information', closeSidebar)}
+          </div>
+        </Collapse>
+      </>
+    );
+  };
+
+  const handleAddBranch = async (e) => {
+    e.preventDefault();
+    setBranchError('');
+    if (!newBranchName.trim()) return;
+
+    try {
+      setAddingBranch(true);
+      await addBranch(newBranchName.trim());
+      setNewBranchName('');
+    } catch (error) {
+      setBranchError(error.message || 'Failed to add branch');
+    } finally {
+      setAddingBranch(false);
+    }
+  };
+
+  const handleDeleteClick = (branch) => {
+    setBranchToDelete(branch);
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!branchToDelete) return;
+
+    try {
+      setDeletingBranch(true);
+      setBranchError('');
+      await deleteBranch(branchToDelete.id);
+      setShowDeleteModal(false);
+      setBranchToDelete(null);
+    } catch (error) {
+      setBranchError(error.message || 'Failed to delete branch');
+    } finally {
+      setDeletingBranch(false);
+    }
+  };
+
+  const renderBranchManager = (closeSidebar = false) => (
+    <>
+      <div className="sidebar-branch-manager mb-3">
+        <div className="d-flex justify-content-between align-items-center mb-2">
+          <div className="sidebar-branch-title">
+            <i className="bi bi-diagram-3 me-2"></i>
+            Branch
+          </div>
+          <span className="text-muted small">{branches?.length || 0} total</span>
+        </div>
+        <Form.Select
+          size="sm"
+          value={activeBranchId || ''}
+          onChange={(e) => {
+            selectBranch(e.target.value);
+            if (closeSidebar) setShowSidebar(false);
+          }}
+        >
+          {(branches || []).length === 0 ? (
+            <option value="">No branches</option>
+          ) : (
+            (branches || []).map(branch => (
+              <option key={branch.id} value={branch.id}>
+                {branch.name || 'Unnamed branch'}
+              </option>
+            ))
+          )}
+        </Form.Select>
+        {!isStaff && !isGuest && (branches || []).length > 0 && (
+          <div className="mt-2">
+            {(branches || []).map(branch => {
+              const isMainBranch = branch.id === primaryShopId;
+              const isActive = branch.id === activeBranchId;
+              return (
+                <div 
+                  key={branch.id} 
+                  className={`d-flex justify-content-between align-items-center mb-1 p-1 rounded ${isActive ? 'bg-light' : ''}`}
+                  style={{ fontSize: '0.85rem' }}
+                >
+                  <span className="text-truncate flex-grow-1 me-2" style={{ maxWidth: '70%' }}>
+                    {branch.name || 'Unnamed branch'}
+                    {isMainBranch && <span className="text-muted ms-1">(Main)</span>}
+                  </span>
+                  {!isMainBranch && (
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="text-danger p-0"
+                      style={{ fontSize: '0.75rem', minWidth: 'auto' }}
+                      onClick={() => handleDeleteClick(branch)}
+                      title="Delete branch"
+                    >
+                      <i className="bi bi-trash"></i>
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {!isStaff && !isGuest && (
+          <Form onSubmit={handleAddBranch} className="mt-2">
+            <InputGroup size="sm">
+              <Form.Control
+                type="text"
+                placeholder="New branch name"
+                value={newBranchName}
+                onChange={(e) => setNewBranchName(e.target.value)}
+              />
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={addingBranch || !newBranchName.trim()}
+              >
+                {addingBranch ? 'Adding...' : 'Add'}
+              </Button>
+            </InputGroup>
+          </Form>
+        )}
+        {branchError && <div className="text-danger small mt-1">{branchError}</div>}
+      </div>
+      <Modal show={showDeleteModal} onHide={() => {
+        setShowDeleteModal(false);
+        setBranchToDelete(null);
+        setBranchError('');
+      }} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Delete Branch</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {branchError && <div className="alert alert-danger mb-2">{branchError}</div>}
+          <p>Are you sure you want to delete the branch <strong>"{branchToDelete?.name || 'Unnamed branch'}"</strong>?</p>
+          <p className="text-muted small mb-0">This action cannot be undone. All data associated with this branch will remain, but you won't be able to access it through this branch.</p>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button 
+            variant="secondary" 
+            onClick={() => {
+              setShowDeleteModal(false);
+              setBranchToDelete(null);
+              setBranchError('');
+            }}
+            disabled={deletingBranch}
+          >
+            Cancel
+          </Button>
+          <Button 
+            variant="danger" 
+            onClick={handleConfirmDelete}
+            disabled={deletingBranch}
+          >
+            {deletingBranch ? 'Deleting...' : 'Delete Branch'}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+    </>
+  );
+
   return (
     <>
       {/* Mobile Top Bar with Menu Button */}
-      <Navbar bg="primary" variant="dark" className="mb-3 d-lg-none">
-        <Container fluid>
-        <Navbar.Brand as={Link} to="/dashboard">
-          {shopData ? shopData.shopName : 'Shop Billing System'}
-        </Navbar.Brand>
-          <Button variant="outline-light" onClick={() => setShowSidebar(true)}>
-            <i className="bi bi-list"></i> <Translate textKey="menu" fallback="Menu" />
-          </Button>
+      <Navbar bg="primary" variant="dark" className="mobile-top-navbar d-lg-none">
+        <Container fluid className="mobile-top-navbar__container">
+          <Navbar.Brand 
+            as={Link} 
+            to={currentUser ? '/dashboard' : '/login'}
+            className="mobile-top-navbar__brand"
+            title={shopData ? shopData.shopName : 'Shop Billing System'}
+          >
+            <span className="mobile-top-navbar__shop">
+              {shopData ? shopData.shopName : 'Shop Billing System'}
+            </span>
+            {currentUser && (
+              <span className="mobile-top-navbar__meta">
+                {userRoleLabel}
+              </span>
+            )}
+          </Navbar.Brand>
+          <div className="mobile-top-navbar__actions">
+            {currentUser && (
+              <LanguageToggle 
+                isCompact 
+                variant="outline-light"
+                className="mobile-top-navbar__lang"
+                aria-label="Toggle language"
+              />
+            )}
+            <Button 
+              variant="light" 
+              className="mobile-top-navbar__menu" 
+              onClick={() => setShowSidebar(true)}
+              aria-label="Open menu"
+            >
+              <i className="bi bi-list"></i>
+            </Button>
+          </div>
         </Container>
       </Navbar>
 
@@ -322,6 +569,7 @@ const MainNavbar = () => {
               </div>
             </div>
           )}
+          {currentUser && renderBranchManager(true)}
           <Nav className="flex-column sidebar-nav">
             {currentUser ? (
               <>
@@ -333,7 +581,7 @@ const MainNavbar = () => {
                   renderNavItem('/receipts', 'receipt_long', <Translate textKey="receipts" />, true)
                 )}
                 {hasPermission('canViewAnalytics') && (
-                  renderNavItem('/sales-analytics', 'query_stats', <Translate textKey="salesAnalytics" fallback="Sales Analytics" />, true)
+                  renderNavItem('/sales-analytics', 'query_stats', <Translate textKey="salesAnalytics" fallback="Profit and Loss" />, true)
                 )}
                 {hasPermission('canViewStock') && (
                   <>
@@ -350,8 +598,12 @@ const MainNavbar = () => {
                 {hasPermission('canMarkAttendance') && (
                   renderAttendanceMenu(true, true)
                 )}
+                {renderContactsMenu(true, true)}
                 {!isStaff && !isGuest && (
                   renderNavItem('/settings', 'settings', <Translate textKey="settings" />, true)
+                )}
+                {!isStaff && !isGuest && (
+                  renderNavItem('/manage-passwords', 'lock_reset', 'Manage Passwords', true)
                 )}
                 {!isStaff && !isGuest && (
                   renderNavItem('/shop-profile', 'badge', 'Shop Profile', true)
@@ -394,6 +646,7 @@ const MainNavbar = () => {
             </div>
           )}
         </div>
+        {currentUser && renderBranchManager(false)}
         <Nav className="flex-column sidebar-nav">
           {currentUser && (
             <>
@@ -405,7 +658,7 @@ const MainNavbar = () => {
                 renderNavItem('/receipts', 'receipt_long', <Translate textKey="receipts" />)
               )}
               {hasPermission('canViewAnalytics') && (
-                renderNavItem('/sales-analytics', 'query_stats', <Translate textKey="salesAnalytics" fallback="Sales Analytics" />)
+                renderNavItem('/sales-analytics', 'query_stats', <Translate textKey="salesAnalytics" fallback="Profit and Loss" />)
               )}
               {hasPermission('canViewStock') && (
                 <>
@@ -422,8 +675,12 @@ const MainNavbar = () => {
               {hasPermission('canMarkAttendance') && (
                 renderAttendanceMenu(false, false)
               )}
+              {renderContactsMenu(false, false)}
               {!isStaff && !isGuest && (
                 renderNavItem('/settings', 'settings', <Translate textKey="settings" />)
+              )}
+              {!isStaff && !isGuest && (
+                renderNavItem('/manage-passwords', 'lock_reset', 'Manage Passwords')
               )}
               {!isStaff && !isGuest && (
                 renderNavItem('/shop-profile', 'badge', 'Shop Profile')

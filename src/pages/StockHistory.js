@@ -5,19 +5,20 @@ import MainNavbar from '../components/Navbar';
 import PageHeader from '../components/PageHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { getStockMovements, getShopStock } from '../utils/stockUtils';
+import { formatDisplayDate } from '../utils/dateUtils';
 
 const StockHistory = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, activeShopId } = useAuth();
   const navigate = useNavigate();
   const [movements, setMovements] = useState([]);
   const [items, setItems] = useState([]);
   const [filterItem, setFilterItem] = useState('');
 
   useEffect(() => {
-    if (!currentUser) return;
-    getShopStock(currentUser.uid).then(setItems);
-    getStockMovements(currentUser.uid).then(setMovements);
-  }, [currentUser]);
+    if (!currentUser || !activeShopId) return;
+    getShopStock(activeShopId).then(setItems);
+    getStockMovements(activeShopId).then(setMovements);
+  }, [currentUser, activeShopId]);
 
   const filtered = movements.filter(m => filterItem ? m.itemId === filterItem : true);
 
@@ -31,7 +32,7 @@ const StockHistory = () => {
         <td>${m.unit || '-'}</td>
         <td>${m.supplier || '-'}</td>
         <td>${m.note || '-'}</td>
-        <td>${new Date(m.createdAt).toLocaleString()}</td>
+        <td>${formatDisplayDate(m.createdAt)}</td>
       </tr>
     `).join('');
     win.document.write(`
@@ -100,7 +101,7 @@ const StockHistory = () => {
                       <td>{m.unit || '-'}</td>
                       <td>{m.supplier || '-'}</td>
                       <td>{m.note || '-'}</td>
-                      <td>{new Date(m.createdAt).toLocaleString()}</td>
+                      <td>{formatDisplayDate(m.createdAt)}</td>
                     </tr>
                   ))}
                   {filtered.length === 0 && (

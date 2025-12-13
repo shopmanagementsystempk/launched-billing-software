@@ -122,7 +122,7 @@ const QRScanner = () => {
       const attendanceRef = collection(db, 'attendance');
       const attendanceQuery = query(
         attendanceRef,
-        where('shopId', '==', currentUser.uid),
+        where('shopId', '==', activeShopId),
         where('employeeId', '==', employee.id),
         where('date', '==', today)
       );
@@ -155,7 +155,7 @@ const QRScanner = () => {
         // Create new attendance record
         await addDoc(collection(db, 'attendance'), {
           employeeId: employee.id,
-          shopId: currentUser.uid,
+          shopId: activeShopId,
           date: today,
           status: 'present',
           checkIn: currentTime,

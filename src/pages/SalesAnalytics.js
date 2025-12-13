@@ -5,6 +5,7 @@ import MainNavbar from '../components/Navbar';
 import PageHeader from '../components/PageHeader';
 import { formatCurrency } from '../utils/receiptUtils';
 import { getDailySalesAndProfit, getMonthlySalesAndProfit, getYearlySalesAndProfit } from '../utils/salesUtils';
+import { formatDisplayDate } from '../utils/dateUtils';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import './SalesAnalytics.css';
@@ -168,11 +169,43 @@ const SalesAnalytics = () => {
     switch (viewMode) {
       case 'daily':
         return (
-          <Form.Control
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-          />
+          <div className="position-relative">
+            <Form.Control
+              type="text"
+              value={selectedDate ? formatDisplayDate(new Date(selectedDate)) : ''}
+              readOnly
+              onClick={() => {
+                const dateInput = document.getElementById('hidden-date-input');
+                if (dateInput) {
+                  dateInput.showPicker ? dateInput.showPicker() : dateInput.click();
+                }
+              }}
+              style={{ cursor: 'pointer' }}
+            />
+            <input
+              id="hidden-date-input"
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              style={{
+                position: 'absolute',
+                opacity: 0,
+                width: '100%',
+                height: '100%',
+                cursor: 'pointer',
+                top: 0,
+                left: 0
+              }}
+            />
+            <i className="bi bi-calendar" style={{
+              position: 'absolute',
+              right: '10px',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              pointerEvents: 'none',
+              color: '#6c757d'
+            }}></i>
+          </div>
         );
       case 'monthly':
         return (
@@ -284,7 +317,7 @@ const SalesAnalytics = () => {
     // Combine all data
     const csvContent = [
       ['Employee Sales Report'],
-      [`Generated: ${new Date().toLocaleString()}`],
+      [`Generated: ${formatDisplayDate(new Date())}`],
       [`Period: ${viewMode} view - ${selectedDate}`],
       [],
       ['Detailed Product Sales'],
@@ -341,7 +374,7 @@ const SalesAnalytics = () => {
     // Report Info
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(`Generated: ${new Date().toLocaleString()}`, margin, yPosition);
+    pdf.text(`Generated: ${formatDisplayDate(new Date())}`, margin, yPosition);
     yPosition += lineHeight;
     pdf.text(`Period: ${viewMode} view - ${selectedDate}`, margin, yPosition);
     yPosition += lineHeight * 1.5;
@@ -452,27 +485,27 @@ const SalesAnalytics = () => {
     return (
       <>
         <Row className="mb-4">
-          <Col md={3}>
-            <Card className="text-center p-3 mb-3 shadow-sm analytics-card">
+          <Col md={3} className="d-flex">
+            <Card className="text-center p-3 mb-3 shadow-sm analytics-card h-100 w-100">
               <Card.Title><Translate textKey="totalSales" fallback="Total Sales" /></Card.Title>
               <Card.Text className="display-6">{formatCurrency(analytics.sales)}</Card.Text>
             </Card>
           </Col>
-          <Col md={3}>
-            <Card className="text-center p-3 mb-3 shadow-sm analytics-card">
+          <Col md={3} className="d-flex">
+            <Card className="text-center p-3 mb-3 shadow-sm analytics-card h-100 w-100">
               <Card.Title><Translate textKey="totalProfit" fallback="Total Profit" /></Card.Title>
               <Card.Text className="display-6">{formatCurrency(analytics.profit)}</Card.Text>
               <small className="text-muted">{profitMargin}% margin</small>
             </Card>
           </Col>
-          <Col md={3}>
-            <Card className="text-center p-3 mb-3 shadow-sm analytics-card">
+          <Col md={3} className="d-flex">
+            <Card className="text-center p-3 mb-3 shadow-sm analytics-card h-100 w-100">
               <Card.Title><Translate textKey="itemsSold" fallback="Items Sold" /></Card.Title>
               <Card.Text className="display-6">{analytics.totalItems}</Card.Text>
             </Card>
           </Col>
-          <Col md={3}>
-            <Card className="text-center p-3 mb-3 shadow-sm analytics-card">
+          <Col md={3} className="d-flex">
+            <Card className="text-center p-3 mb-3 shadow-sm analytics-card h-100 w-100">
               <Card.Title><Translate textKey="transactions" fallback="Transactions" /></Card.Title>
               <Card.Text className="display-6">{analytics.transactionCount}</Card.Text>
             </Card>
@@ -751,7 +784,7 @@ const SalesAnalytics = () => {
       <MainNavbar />
       <Container>
         <PageHeader 
-          title="Sales & Profit Analytics" 
+          title="Profit and Loss" 
           icon="bi-graph-up" 
           subtitle="Dive into your sales performance, profit trends, and period comparisons."
         />

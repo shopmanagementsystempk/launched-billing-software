@@ -3,19 +3,36 @@ import { Button } from 'react-bootstrap';
 import { useLanguage } from '../contexts/LanguageContext';
 import translations from '../utils/translations';
 
-function LanguageToggle() {
+function LanguageToggle({
+  variant = 'outline-light',
+  size = 'sm',
+  className = '',
+  isCompact = false,
+  ...buttonProps
+}) {
   const { language, toggleLanguage } = useLanguage();
+
+  const label = isCompact
+    ? (language === 'en' ? 'UR' : 'EN')
+    : (language === 'en' ? translations.en.switchToUrdu : translations.ur.switchToEnglish);
+  
+  const classes = [
+    'language-toggle-btn',
+    isCompact ? 'language-toggle-btn--compact' : '',
+    className
+  ].filter(Boolean).join(' ');
   
   return (
     <Button 
-      variant="outline-light" 
-      className="ms-2" 
+      variant={variant}
+      className={classes}
       onClick={toggleLanguage}
-      size="sm"
+      size={size}
+      {...buttonProps}
     >
-      {language === 'en' ? translations.en.switchToUrdu : translations.ur.switchToEnglish}
+      {label}
     </Button>
   );
 }
 
-export default LanguageToggle; 
+export default LanguageToggle;

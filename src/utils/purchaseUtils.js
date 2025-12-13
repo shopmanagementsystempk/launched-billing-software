@@ -28,12 +28,17 @@ export const createPurchaseOrder = async (shopId, purchasePayload) => {
 
     if (item.sourceItemId) {
       try {
+        const normalizedLowStockAlert = item.lowStockAlert !== undefined && item.lowStockAlert !== '' && item.lowStockAlert !== null
+          ? normalizeNumber(item.lowStockAlert, null)
+          : null;
+        
         await addStockToItem(shopId, item.sourceItemId, normalizedQuantity, {
           costPrice: normalizedCostPrice,
           supplier: supplier?.trim() || item.supplier?.trim() || '',
           reference: reference?.trim() || '',
           purchaseDate: purchaseDate || new Date().toISOString(),
-          expiryDate: item.expiryDate || null
+          expiryDate: item.expiryDate || null,
+          lowStockAlert: normalizedLowStockAlert
         });
 
         preparedItems.push({
@@ -53,6 +58,10 @@ export const createPurchaseOrder = async (shopId, purchasePayload) => {
       }
     }
 
+    const normalizedLowStockAlert = item.lowStockAlert !== undefined && item.lowStockAlert !== '' && item.lowStockAlert !== null
+      ? normalizeNumber(item.lowStockAlert, null)
+      : null;
+
     const stockPayload = {
       name: item.name?.trim() || 'Unnamed Item',
       description: item.description?.trim() || '',
@@ -63,7 +72,8 @@ export const createPurchaseOrder = async (shopId, purchasePayload) => {
       costPrice: normalizedCostPrice,
       supplier: supplier?.trim() || item.supplier?.trim() || '',
       sku: item.sku?.trim() || '',
-      expiryDate: item.expiryDate || null
+      expiryDate: item.expiryDate || null,
+      lowStockAlert: normalizedLowStockAlert
     };
 
     const stockItemId = await addStockItem(shopId, stockPayload);

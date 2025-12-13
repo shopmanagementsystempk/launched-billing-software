@@ -7,6 +7,8 @@ import { createPurchaseOrder, getPurchaseOrders } from '../utils/purchaseUtils';
 import { formatDisplayDate } from '../utils/dateUtils';
 import { getShopStock } from '../utils/stockUtils';
 import { getInventoryCategories, addInventoryCategory, updateInventoryCategory, deleteInventoryCategory } from '../utils/categoryUtils';
+import { db } from '../firebase/config';
+import { collection, query, where, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
 
 const defaultRow = {
   sourceItemId: '',
@@ -17,7 +19,9 @@ const defaultRow = {
   unit: 'units',
   costPrice: '',
   sellingPrice: '',
-  expiryDate: ''
+  expiryDate: '',
+  barcode: '',
+  lowStockAlert: ''
 };
 const createEmptyRow = () => ({ ...defaultRow });
 
@@ -33,7 +37,7 @@ const calculateRowTotal = (row) => {
 };
 
 const PurchaseManagement = () => {
-  const { currentUser, shopData } = useAuth();
+  const { currentUser, shopData, activeShopId } = useAuth();
   const [rows, setRows] = useState([createEmptyRow()]);
   const [supplier, setSupplier] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
@@ -49,6 +53,8 @@ const PurchaseManagement = () => {
   const [stockLoading, setStockLoading] = useState(false);
   const [categories, setCategories] = useState([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [suppliers, setSuppliers] = useState([]);
+  const [suppliersLoading, setSuppliersLoading] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newCategory, setNewCategory] = useState({ name: '', description: '' });
   const [editCategory, setEditCategory] = useState({ id: '', name: '', description: '' });
@@ -57,41 +63,99 @@ const PurchaseManagement = () => {
   const [categoryToDelete, setCategoryToDelete] = useState(null);
   const [categoryError, setCategoryError] = useState('');
   const [categorySuccess, setCategorySuccess] = useState('');
+  const [units, setUnits] = useState(['units', 'kg', 'litre', 'pack']);
+  const [unitsLoading, setUnitsLoading] = useState(false);
+  const [showUnitModal, setShowUnitModal] = useState(false);
+  const [newUnitName, setNewUnitName] = useState('');
 
   const totalCost = useMemo(() => {
     return rows.reduce((sum, row) => sum + calculateRowTotal(row), 0);
   }, [rows]);
 
   useEffect(() => {
-    if (!currentUser?.uid) return;
+    if (!currentUser?.uid || !activeShopId) return;
     setHistoryLoading(true);
-    getPurchaseOrders(currentUser.uid)
+    getPurchaseOrders(activeShopId)
       .then(setHistory)
       .catch(err => console.error('Failed to load purchase history', err))
       .finally(() => setHistoryLoading(false));
-  }, [currentUser]);
+  }, [currentUser, activeShopId]);
 
   useEffect(() => {
-    if (!currentUser?.uid) return;
+    if (!currentUser?.uid || !activeShopId) return;
     setStockLoading(true);
-    getShopStock(currentUser.uid)
+    getShopStock(activeShopId)
       .then(setStockItems)
       .catch(err => console.error('Failed to load stock items', err))
       .finally(() => setStockLoading(false));
-  }, [currentUser]);
+  }, [currentUser, activeShopId]);
 
   const fetchCategories = useCallback(() => {
-    if (!currentUser?.uid) return;
+    if (!currentUser?.uid || !activeShopId) return;
     setCategoriesLoading(true);
-    getInventoryCategories(currentUser.uid)
+    getInventoryCategories(activeShopId)
       .then(setCategories)
       .catch(err => console.error('Failed to load categories', err))
       .finally(() => setCategoriesLoading(false));
-  }, [currentUser]);
+  }, [currentUser, activeShopId]);
 
   useEffect(() => {
     fetchCategories();
   }, [fetchCategories]);
+
+  const fetchSuppliers = useCallback(async () => {
+    if (!currentUser?.uid || !activeShopId) return;
+    
+    setSuppliersLoading(true);
+    try {
+      const suppliersRef = collection(db, 'suppliers');
+      const q = query(
+        suppliersRef,
+        where('shopId', '==', activeShopId)
+      );
+      const querySnapshot = await getDocs(q);
+      const suppliersData = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      // Sort by name in JavaScript to avoid Firestore index requirement
+      suppliersData.sort((a, b) => {
+        const nameA = (a.name || '').toLowerCase();
+        const nameB = (b.name || '').toLowerCase();
+        return nameA.localeCompare(nameB);
+      });
+      setSuppliers(suppliersData);
+    } catch (err) {
+      console.error('Error fetching suppliers:', err);
+    } finally {
+      setSuppliersLoading(false);
+    }
+  }, [currentUser, activeShopId]);
+
+  useEffect(() => {
+    fetchSuppliers();
+  }, [fetchSuppliers]);
+
+  useEffect(() => {
+    if (!currentUser?.uid || !activeShopId) return;
+    const fetchUnits = async () => {
+      try {
+        setUnitsLoading(true);
+        const unitsRef = collection(db, 'units');
+        const q = query(unitsRef, where('shopId', '==', activeShopId));
+        const snapshot = await getDocs(q);
+        const custom = snapshot.docs.map(d => (d.data().name || '').toLowerCase()).filter(Boolean);
+        const defaults = ['units', 'kg', 'litre', 'pack'];
+        const merged = Array.from(new Set([...defaults, ...custom]));
+        setUnits(merged);
+      } catch (e) {
+        console.error('Failed to load units', e);
+      } finally {
+        setUnitsLoading(false);
+      }
+    };
+    fetchUnits();
+  }, [currentUser, activeShopId]);
 
   const setRowValue = (index, key, value) => {
     setRows(prev => {
@@ -99,6 +163,12 @@ const PurchaseManagement = () => {
       next[index] = { ...next[index], [key]: value };
       return next;
     });
+  };
+
+  // Generate random 8-digit barcode for a specific row
+  const generateBarcodeForRow = (index) => {
+    const randomBarcode = Math.floor(10000000 + Math.random() * 90000000).toString();
+    setRowValue(index, 'barcode', randomBarcode);
   };
 
   const addRow = () => setRows(prev => [...prev, createEmptyRow()]);
@@ -117,7 +187,7 @@ const PurchaseManagement = () => {
       const categoryData = {
         name: newCategory.name.trim(),
         description: newCategory.description.trim(),
-        shopId: currentUser.uid
+        shopId: activeShopId
       };
       await addInventoryCategory(categoryData);
       setCategorySuccess('Category added successfully');
@@ -166,6 +236,45 @@ const PurchaseManagement = () => {
     setShowDeleteCategoryModal(true);
   };
 
+  const handleAddUnit = async (e) => {
+    e.preventDefault();
+    if (!currentUser?.uid) return;
+    const name = (newUnitName || '').trim();
+    if (!name) return;
+    try {
+      const unitsRef = collection(db, 'units');
+      await addDoc(unitsRef, { shopId: activeShopId, name });
+      setNewUnitName('');
+      setShowUnitModal(false);
+      // refresh list
+      const q = query(unitsRef, where('shopId', '==', activeShopId));
+      const snapshot = await getDocs(q);
+      const custom = snapshot.docs.map(d => (d.data().name || '').toLowerCase()).filter(Boolean);
+      const defaults = ['units', 'kg', 'litre', 'pack'];
+      const merged = Array.from(new Set([...defaults, ...custom]));
+      setUnits(merged);
+    } catch (e) {
+      console.error('Failed to add unit', e);
+    }
+  };
+
+  const handleDeleteUnit = async (unitId) => {
+    if (!unitId) return;
+    try {
+      await deleteDoc(doc(db, 'units', unitId));
+      // refresh list
+      const unitsRef = collection(db, 'units');
+      const q = query(unitsRef, where('shopId', '==', activeShopId));
+      const snapshot = await getDocs(q);
+      const custom = snapshot.docs.map(d => (d.data().name || '').toLowerCase()).filter(Boolean);
+      const defaults = ['units', 'kg', 'litre', 'pack'];
+      const merged = Array.from(new Set([...defaults, ...custom]));
+      setUnits(merged);
+    } catch (e) {
+      console.error('Failed to delete unit', e);
+    }
+  };
+
   const confirmDeleteCategory = async () => {
     if (!categoryToDelete) return;
     setCategoriesLoading(true);
@@ -189,7 +298,7 @@ const PurchaseManagement = () => {
       const selectedItem = stockItems.find(item => item.id === itemId);
 
       if (!selectedItem) {
-        next[index] = { ...next[index], sourceItemId: '' };
+        next[index] = createEmptyRow();
         return next;
       }
 
@@ -207,7 +316,12 @@ const PurchaseManagement = () => {
         sellingPrice:
           selectedItem.price !== undefined && selectedItem.price !== null
             ? selectedItem.price
-            : next[index].sellingPrice
+            : next[index].sellingPrice,
+        barcode: selectedItem.barcode || '',
+        lowStockAlert:
+          selectedItem.lowStockAlert !== undefined && selectedItem.lowStockAlert !== null
+            ? selectedItem.lowStockAlert.toString()
+            : next[index].lowStockAlert
       };
 
       return next;
@@ -230,6 +344,8 @@ const PurchaseManagement = () => {
       costPrice: parseFloat(row.costPrice || 0),
       sellingPrice: row.sellingPrice ? parseFloat(row.sellingPrice) : null,
       expiryDate: row.expiryDate || null,
+      sku: (row.barcode || '').trim(),
+      lowStockAlert: row.lowStockAlert ? parseFloat(row.lowStockAlert) : null
     }));
   };
 
@@ -264,10 +380,10 @@ const PurchaseManagement = () => {
         reference,
         items: validRows,
       };
-      const purchaseRecord = await createPurchaseOrder(currentUser.uid, payload);
+      const purchaseRecord = await createPurchaseOrder(activeShopId, payload);
       setSuccess('Purchase recorded and items added to inventory');
       resetForm();
-      getPurchaseOrders(currentUser.uid).then(setHistory);
+      getPurchaseOrders(activeShopId).then(setHistory);
       printInvoice(purchaseRecord);
     } catch (err) {
       console.error(err);
@@ -446,7 +562,21 @@ const PurchaseManagement = () => {
                 <Col md={4}>
                   <Form.Group>
                     <Form.Label>Supplier</Form.Label>
-                    <Form.Control value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="e.g. ABC Distributors" />
+                    <Form.Select 
+                      value={supplier} 
+                      onChange={(e) => setSupplier(e.target.value)}
+                      disabled={suppliersLoading}
+                    >
+                      <option value="">Select a supplier</option>
+                      {suppliers.map(sup => (
+                        <option key={sup.id} value={sup.name}>
+                          {sup.name} {sup.company ? `(${sup.company})` : ''}
+                        </option>
+                      ))}
+                    </Form.Select>
+                    <Form.Text className="text-muted">
+                      {suppliersLoading ? 'Loading suppliers...' : suppliers.length === 0 ? 'No suppliers added yet. Add suppliers from Contacts > Supplier Information.' : ''}
+                    </Form.Text>
                   </Form.Group>
                 </Col>
                 <Col md={4}>
@@ -549,6 +679,26 @@ const PurchaseManagement = () => {
                         </Col>
                       </Row>
                       <Row className="g-3 mt-1">
+                        <Col md={4}>
+                          <Form.Group>
+                            <div className="d-flex justify-content-between align-items-center mb-1">
+                              <Form.Label className="mb-0">Barcode</Form.Label>
+                              <Button
+                                variant="link"
+                                size="sm"
+                                className="p-0 text-decoration-none"
+                                onClick={() => generateBarcodeForRow(idx)}
+                                style={{ fontSize: '0.75rem' }}
+                              >
+                                <i className="bi bi-upc-scan me-1"></i>Generate
+                              </Button>
+                            </div>
+                            <Form.Control value={row.barcode || ''} onChange={(e) => setRowValue(idx, 'barcode', e.target.value)} placeholder="Optional" />
+                            <Form.Text className="text-muted">Used for barcode scanning</Form.Text>
+                          </Form.Group>
+                        </Col>
+                      </Row>
+                      <Row className="g-3 mt-1">
                         <Col md={12}>
                           <Form.Group>
                             <Form.Label>Description</Form.Label>
@@ -565,13 +715,25 @@ const PurchaseManagement = () => {
                         </Col>
                         <Col md={3}>
                           <Form.Group>
-                            <Form.Label>Unit</Form.Label>
-                            <Form.Select value={row.unit} onChange={(e) => setRowValue(idx, 'unit', e.target.value)}>
-                              <option value="units">Units</option>
-                              <option value="kg">KG</option>
-                              <option value="litre">Litre</option>
-                              <option value="pack">Pack</option>
+                            <div className="d-flex justify-content-between align-items-center mb-1">
+                              <Form.Label className="mb-0">Unit</Form.Label>
+                              <Button
+                                variant="link"
+                                size="sm"
+                                className="p-0 text-decoration-none"
+                                onClick={() => setShowUnitModal(true)}
+                                style={{ fontSize: '0.75rem' }}
+                              >
+                                <i className="bi bi-pencil-square me-1"></i>Manage Units
+                              </Button>
+                            </div>
+                            <Form.Select value={row.unit} onChange={(e) => setRowValue(idx, 'unit', e.target.value)} disabled={unitsLoading}>
+                              {units.map(u => {
+                                const label = u === 'kg' ? 'KG' : u === 'litre' ? 'Litre' : u === 'pack' ? 'Pack' : u === 'units' ? 'Units' : u.charAt(0).toUpperCase() + u.slice(1);
+                                return <option key={u} value={u}>{label}</option>;
+                              })}
                             </Form.Select>
+                            <Form.Text className="text-muted">{unitsLoading ? 'Loading units...' : ''}</Form.Text>
                           </Form.Group>
                         </Col>
                         <Col md={3}>
@@ -590,6 +752,24 @@ const PurchaseManagement = () => {
                           <Form.Group>
                             <Form.Label>Expiry Date (Optional)</Form.Label>
                             <Form.Control type="date" value={row.expiryDate || ''} onChange={(e) => setRowValue(idx, 'expiryDate', e.target.value)} />
+                          </Form.Group>
+                        </Col>
+                      </Row>
+                      <Row className="g-3 mt-1">
+                        <Col md={3}>
+                          <Form.Group>
+                            <Form.Label>Low Stock Alert (Optional)</Form.Label>
+                            <Form.Control 
+                              type="number" 
+                              min="0" 
+                              step="0.01" 
+                              value={row.lowStockAlert || ''} 
+                              onChange={(e) => setRowValue(idx, 'lowStockAlert', e.target.value)} 
+                              placeholder="Minimum quantity"
+                            />
+                            <Form.Text className="text-muted">
+                              Alert when stock falls below this quantity
+                            </Form.Text>
                           </Form.Group>
                         </Col>
                       </Row>
@@ -772,6 +952,74 @@ const PurchaseManagement = () => {
             <Button variant="danger" onClick={confirmDeleteCategory} disabled={categoriesLoading}>
               {categoriesLoading ? 'Deleting...' : 'Delete'}
             </Button>
+          </Modal.Footer>
+        </Modal>
+
+        {/* Unit Management Modal */}
+        <Modal show={showUnitModal} onHide={() => setShowUnitModal(false)}>
+          <Modal.Header closeButton>
+            <Modal.Title>Manage Units</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <Form onSubmit={handleAddUnit} className="mb-3">
+              <Row className="g-2">
+                <Col xs={8}>
+                  <Form.Control
+                    type="text"
+                    placeholder="New unit (e.g., box, dozen)"
+                    value={newUnitName}
+                    onChange={(e) => setNewUnitName(e.target.value)}
+                    required
+                  />
+                </Col>
+                <Col xs={4}>
+                  <Button type="submit" variant="primary" disabled={unitsLoading}>Add Unit</Button>
+                </Col>
+              </Row>
+            </Form>
+
+            <h6>Available Units</h6>
+            {unitsLoading ? (
+              <div className="text-center py-2"><Spinner animation="border" size="sm" /></div>
+            ) : (
+              <Table hover size="sm">
+                <thead>
+                  <tr>
+                    <th>Unit</th>
+                    <th style={{width:'120px'}}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {units.map(u => (
+                    <tr key={u}>
+                      <td>{u}</td>
+                      <td>
+                        {['units','kg','litre','pack'].includes(u) ? (
+                          <span className="text-muted">Default</span>
+                        ) : (
+                          <Button
+                            variant="outline-danger"
+                            size="sm"
+                            onClick={async () => {
+                              const unitsRef = collection(db, 'units');
+                              const q = query(unitsRef, where('shopId','==', activeShopId));
+                              const snapshot = await getDocs(q);
+                              const match = snapshot.docs.find(d => (d.data().name || '').toLowerCase() === u.toLowerCase());
+                              if (match) handleDeleteUnit(match.id);
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowUnitModal(false)}>Close</Button>
           </Modal.Footer>
         </Modal>
       </Container>

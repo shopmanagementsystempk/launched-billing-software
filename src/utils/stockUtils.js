@@ -232,6 +232,9 @@ export const addStockToItem = async (shopId, itemId, quantityToAdd, options = {}
   if (options.purchaseDate) {
     updatePayload.purchaseDate = options.purchaseDate;
   }
+  if (options.lowStockAlert !== undefined && options.lowStockAlert !== null) {
+    updatePayload.lowStockAlert = parseFloat(options.lowStockAlert);
+  }
   await updateDoc(stockDocRef, updatePayload);
   await recordStockMovement({
     shopId,

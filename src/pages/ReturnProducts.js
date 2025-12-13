@@ -11,7 +11,7 @@ import './ViewReceipt.css'; // Reuse the receipt styling
 
 const ReturnProducts = () => {
   const { id } = useParams();
-  const { currentUser } = useAuth();
+  const { currentUser, activeShopId } = useAuth();
   const [receipt, setReceipt] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -28,11 +28,11 @@ const ReturnProducts = () => {
   useEffect(() => {
     // Fetch the receipt data
     const fetchReceipt = () => {
-      if (currentUser && id) {
+      if (currentUser && id && activeShopId) {
         getReceiptById(id)
           .then(receiptData => {
             // Check if receipt belongs to current user
-            if (receiptData.shopId !== currentUser.uid) {
+            if (receiptData.shopId !== activeShopId) {
               throw new Error('You do not have permission to view this receipt');
             }
             
@@ -57,7 +57,7 @@ const ReturnProducts = () => {
     };
 
     fetchReceipt();
-  }, [id, currentUser]);
+  }, [id, currentUser, activeShopId]);
 
   // Handle checkbox change for returning an item
   const handleReturnCheckboxChange = (index) => {
@@ -283,7 +283,7 @@ const ReturnProducts = () => {
               <h5 className="mb-0">Previous Returns</h5>
             </Card.Header>
             <Card.Body>
-              <p><strong>Return Date:</strong> {new Date(receipt.returnInfo.returnDate).toLocaleString()}</p>
+              <p><strong>Return Date:</strong> {formatDisplayDate(receipt.returnInfo.returnDate)}</p>
               <p><strong>Return Total:</strong> {formatCurrency(receipt.returnInfo.returnTotal)}</p>
               {receipt.returnInfo.returnReason && (
                 <p><strong>Return Reason:</strong> {receipt.returnInfo.returnReason}</p>

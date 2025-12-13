@@ -103,7 +103,7 @@ const AttendanceReport = () => {
         const attendanceRef = collection(db, 'attendance');
         const attendanceQuery = query(
           attendanceRef,
-          where('shopId', '==', currentUser.uid)
+          where('shopId', '==', activeShopId)
         );
         
         const snapshot = await getDocs(attendanceQuery);

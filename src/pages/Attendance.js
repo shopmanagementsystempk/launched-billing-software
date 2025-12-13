@@ -56,7 +56,7 @@ const Attendance = () => {
   
   useEffect(() => {
     const fetchAttendance = async () => {
-      if (!currentUser) {
+      if (!currentUser || !activeShopId) {
         setLoading(false);
         return;
       }
@@ -68,7 +68,7 @@ const Attendance = () => {
         // Modified approach: Query by shopId only, then filter in memory
         const attendanceQuery = query(
           attendanceRef,
-          where('shopId', '==', currentUser.uid)
+          where('shopId', '==', activeShopId)
         );
         
         const snapshot = await getDocs(attendanceQuery);
@@ -108,7 +108,7 @@ const Attendance = () => {
     // Always fetch attendance, even if employees array is empty
     // This prevents infinite loading when there are no employees
     fetchAttendance();
-  }, [currentUser, selectedDate, selectedEmployee, employees, getTranslatedAttr]);
+  }, [currentUser, activeShopId, selectedDate, selectedEmployee, employees, getTranslatedAttr]);
   
   // Translate status
   const getTranslatedStatus = (status) => {

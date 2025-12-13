@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { 
-  createUserWithEmailAndPassword, 
+import {
+  createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
@@ -8,7 +8,19 @@ import {
   GoogleAuthProvider,
   signInWithPopup
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
+import {
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  collection,
+  query,
+  where,
+  getDocs,
+  serverTimestamp,
+  addDoc,
+  deleteDoc
+} from 'firebase/firestore';
 import { auth, db } from '../firebase/config';
 import { validatePassword } from '../utils/passwordPolicy';
 
@@ -25,6 +37,9 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
   const [isStaff, setIsStaff] = useState(false);
+  const [branches, setBranches] = useState([]);
+  const [activeBranchId, setActiveBranchId] = useState(null);
+  const [branchesLoading, setBranchesLoading] = useState(true);
 
   // Register new shop with password validation
   function registerShop(email, password, shopDetails) {
@@ -347,11 +362,6 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, []);
 
-  // Compute the active shop id (owner's uid or parent id for staff)
-  const activeShopId = isStaff && staffData && staffData.shopId
-    ? staffData.shopId
-    : (currentUser ? currentUser.uid : null);
-
   // Change password with policy enforcement
   function changePassword(newPassword) {
     if (!currentUser) return Promise.reject(new Error('No user logged in'));
@@ -404,6 +414,130 @@ export function AuthProvider({ children }) {
       });
   }
 
+  // Determine root shop id (owner id for staff)
+  const primaryShopId = isStaff && staffData && staffData.shopId
+    ? staffData.shopId
+    : (currentUser ? currentUser.uid : null);
+
+  // Branch management
+  useEffect(() => {
+    const loadBranches = async () => {
+      if (!primaryShopId) {
+        setBranches([]);
+        setActiveBranchId(null);
+        setBranchesLoading(false);
+        return;
+      }
+
+      setBranchesLoading(true);
+
+      try {
+        const branchesRef = collection(db, 'shops', primaryShopId, 'branches');
+        const snapshot = await getDocs(branchesRef);
+        let branchList = snapshot.docs.map(d => ({
+          id: d.id,
+          ...d.data()
+        }));
+
+        // Ensure a default branch exists that maps to the original shop id
+        const hasDefaultBranch = branchList.some(b => b.id === primaryShopId);
+        if (!hasDefaultBranch) {
+          const defaultBranch = {
+            name: 'Main Branch',
+            createdAt: new Date().toISOString(),
+            isDefault: true
+          };
+          await setDoc(doc(db, 'shops', primaryShopId, 'branches', primaryShopId), defaultBranch);
+          branchList.push({ id: primaryShopId, ...defaultBranch });
+        }
+
+        setBranches(branchList);
+
+        const storageKey = `activeBranch_${primaryShopId}`;
+        const storedBranchId = (typeof window !== 'undefined') ? window.localStorage.getItem(storageKey) : null;
+        const validStored = storedBranchId && branchList.some(b => b.id === storedBranchId);
+        const branchToUse = validStored ? storedBranchId : primaryShopId;
+
+        setActiveBranchId(branchToUse);
+
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(storageKey, branchToUse);
+        }
+      } catch (error) {
+        console.error('Failed to load branches:', error);
+      } finally {
+        setBranchesLoading(false);
+      }
+    };
+
+    loadBranches();
+  }, [primaryShopId]);
+
+  const selectBranch = (branchId) => {
+    if (!branchId || !primaryShopId) return;
+    const exists = branches.some(b => b.id === branchId);
+    if (!exists) return;
+
+    setActiveBranchId(branchId);
+    const storageKey = `activeBranch_${primaryShopId}`;
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(storageKey, branchId);
+    }
+  };
+
+  const addBranch = async (name) => {
+    if (!primaryShopId) throw new Error('No shop available for branches');
+    if (isStaff || isGuest) throw new Error('Only shop owners can add branches');
+
+    const trimmedName = (name || '').trim();
+    if (!trimmedName) throw new Error('Branch name is required');
+
+    const branchesRef = collection(db, 'shops', primaryShopId, 'branches');
+    const newBranchPayload = {
+      name: trimmedName,
+      createdAt: new Date().toISOString(),
+      createdBy: currentUser?.uid || primaryShopId
+    };
+
+    const docRef = await addDoc(branchesRef, newBranchPayload);
+    const newBranch = { id: docRef.id, ...newBranchPayload };
+    setBranches(prev => [...prev, newBranch]);
+    selectBranch(docRef.id);
+    return newBranch;
+  };
+
+  const deleteBranch = async (branchId) => {
+    if (!primaryShopId) throw new Error('No shop available for branches');
+    if (isStaff || isGuest) throw new Error('Only shop owners can delete branches');
+    
+    // Prevent deleting the default/main branch
+    if (branchId === primaryShopId) {
+      throw new Error('Cannot delete the main branch');
+    }
+
+    // Check if branch exists
+    const branchExists = branches.some(b => b.id === branchId);
+    if (!branchExists) {
+      throw new Error('Branch not found');
+    }
+
+    // If deleting the active branch, switch to default branch first
+    if (activeBranchId === branchId) {
+      selectBranch(primaryShopId);
+    }
+
+    // Delete from Firestore
+    const branchRef = doc(db, 'shops', primaryShopId, 'branches', branchId);
+    await deleteDoc(branchRef);
+
+    // Update local state
+    setBranches(prev => prev.filter(b => b.id !== branchId));
+  };
+
+  // Use the branch id as the scoped shop id for data, defaulting to the root shop
+  const activeShopId = activeBranchId || primaryShopId;
+  const isDefaultBranch = activeBranchId === primaryShopId;
+
   const value = {
     currentUser,
     shopData,
@@ -411,7 +545,15 @@ export function AuthProvider({ children }) {
     loading,
     isGuest,
     isStaff,
+    primaryShopId,
     activeShopId,
+    activeBranchId,
+    branches,
+    branchesLoading,
+    isDefaultBranch,
+    selectBranch,
+    addBranch,
+    deleteBranch,
     registerShop,
     login,
     logout,

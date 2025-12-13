@@ -13,7 +13,7 @@ import { formatDisplayDate } from '../utils/dateUtils';
 import MainNavbar from '../components/Navbar';
 import PageHeader from '../components/PageHeader';
 import { db } from '../firebase/config';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import '../styles/select.css';
 
 const NewReceipt = () => {
@@ -23,9 +23,10 @@ const NewReceipt = () => {
   const [productCode, setProductCode] = useState('');
   const [customer, setCustomer] = useState('Walk-in Customer');
   const [autoPrint, setAutoPrint] = useState(true);
-  const [discount, setDiscount] = useState('0');
-  const [tax, setTax] = useState('0');
-  const [enterAmount, setEnterAmount] = useState('0');
+  const [discount, setDiscount] = useState('');
+  const [tax, setTax] = useState('');
+  const [enterAmount, setEnterAmount] = useState('');
+  const [loanAmount, setLoanAmount] = useState('');
   const [transactionId] = useState(generateTransactionId());
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -36,8 +37,11 @@ const NewReceipt = () => {
   const [employees, setEmployees] = useState([]);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [employeesLoaded, setEmployeesLoaded] = useState(false);
+  const [customers, setCustomers] = useState([]);
+  const [customersLoaded, setCustomersLoaded] = useState(false);
   const navigate = useNavigate();
   const pdfRef = useRef();
+  const barcodeInputRef = useRef(null);
 
   // Fetch stock items
   useEffect(() => {
@@ -53,15 +57,25 @@ const NewReceipt = () => {
     }
   }, [currentUser, activeShopId]);
 
+  // Auto-focus on barcode input when page loads
+  useEffect(() => {
+    if (stockLoaded && barcodeInputRef.current) {
+      // Small delay to ensure the input is fully rendered
+      setTimeout(() => {
+        barcodeInputRef.current?.focus();
+      }, 100);
+    }
+  }, [stockLoaded]);
+
   // Fetch employees
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && activeShopId) {
       const fetchEmployees = async () => {
         try {
           const employeesRef = collection(db, 'employees');
           const employeesQuery = query(
             employeesRef,
-            where('shopId', '==', currentUser.uid)
+            where('shopId', '==', activeShopId)
           );
           const snapshot = await getDocs(employeesQuery);
           const employeesList = snapshot.docs.map(doc => ({
@@ -77,7 +91,29 @@ const NewReceipt = () => {
       };
       fetchEmployees();
     }
-  }, [currentUser]);
+  }, [currentUser, activeShopId]);
+
+  useEffect(() => {
+    if (currentUser && activeShopId) {
+      const fetchCustomers = async () => {
+        try {
+          const customersRef = collection(db, 'customers');
+          const customersQuery = query(
+            customersRef,
+            where('shopId', '==', activeShopId)
+          );
+          const snapshot = await getDocs(customersQuery);
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+          setCustomers(list);
+          setCustomersLoaded(true);
+        } catch (error) {
+          setCustomersLoaded(true);
+        }
+      };
+      fetchCustomers();
+    }
+  }, [currentUser, activeShopId]);
 
   // Cleanup: Remove any print iframes when component unmounts
   useEffect(() => {
@@ -116,6 +152,7 @@ const NewReceipt = () => {
           salePrice: matchingItem.price.toString(),
           tax: '0',
           quantity: '1',
+          itemPrice: '', // Price field for quantity calculation
           total: matchingItem.price.toString(),
           costPrice: matchingItem.costPrice ? matchingItem.costPrice.toString() : '0',
           quantityUnit: matchingItem.quantityUnit || 'units',
@@ -157,6 +194,7 @@ const NewReceipt = () => {
           salePrice: matchingItem.price.toString(),
           tax: '0',
           quantity: '1',
+          itemPrice: '', // Price field for quantity calculation
           total: matchingItem.price.toString(),
           costPrice: matchingItem.costPrice ? matchingItem.costPrice.toString() : '0',
           quantityUnit: matchingItem.quantityUnit || 'units',
@@ -199,6 +237,7 @@ const NewReceipt = () => {
             salePrice: matchingItem.price.toString(),
             tax: '0',
             quantity: '1',
+            itemPrice: '', // Price field for quantity calculation
             total: matchingItem.price.toString(),
             costPrice: matchingItem.costPrice ? matchingItem.costPrice.toString() : '0',
             quantityUnit: matchingItem.quantityUnit || 'units',
@@ -219,31 +258,60 @@ const NewReceipt = () => {
     const totalAmount = items.reduce((sum, item) => 
       sum + (parseFloat(item.salePrice || 0) * parseFloat(item.quantity || 1)), 0);
     const discountAmount = parseFloat(discount || 0);
-    const taxAmount = parseFloat(tax || 0);
-    const payable = totalAmount - discountAmount + taxAmount;
+    const subtotalAfterDiscount = totalAmount - discountAmount;
+    // Calculate tax as percentage of subtotal after discount
+    const taxPercentage = parseFloat(tax || 0);
+    const taxAmount = (taxPercentage / 100) * subtotalAfterDiscount;
+    const payable = subtotalAfterDiscount + taxAmount;
     const receivedAmount = parseFloat(enterAmount || 0);
-    const balance = receivedAmount - payable;
+    const loanAmt = Math.max(0, Math.min(parseFloat(loanAmount || 0) || 0, payable));
+    const effectivePayable = Math.max(0, payable - loanAmt);
+    const balance = receivedAmount - effectivePayable;
     
     return {
       totalQuantities: totalQuantities.toFixed(2),
       totalAmount: totalAmount.toFixed(2),
+      taxAmount: taxAmount.toFixed(2),
       payable: payable.toFixed(2),
       receivedAmount: receivedAmount.toFixed(2),
       balance: balance.toFixed(2),
-      return: balance < 0 ? Math.abs(balance).toFixed(2) : '0.00'
+      return: balance < 0 ? Math.abs(balance).toFixed(2) : '0.00',
+      loanAmount: loanAmt.toFixed(2),
+      effectivePayable: effectivePayable.toFixed(2)
     };
-  }, [items, discount, tax, enterAmount]);
+  }, [items, discount, tax, enterAmount, loanAmount]);
 
   // Handle item changes
   const handleItemChange = (index, field, value) => {
     const newItems = [...items];
     newItems[index][field] = value;
     
-    // Recalculate total for this item
-    if (field === 'quantity' || field === 'salePrice') {
+    // If price field is entered, calculate quantity based on price / unit price
+    if (field === 'itemPrice') {
+      const itemPrice = value === '' ? 0 : parseFloat(value || 0);
+      const unitPrice = parseFloat(newItems[index].salePrice || 0);
+      
+      if (itemPrice > 0 && unitPrice > 0) {
+        // Calculate quantity: quantity = price / unit price
+        const calculatedQuantity = (itemPrice / unitPrice).toFixed(4);
+        newItems[index].quantity = calculatedQuantity;
+        newItems[index].total = itemPrice.toFixed(2);
+      } else {
+        // If price is cleared, recalculate total based on quantity
+        const quantity = parseFloat(newItems[index].quantity || 1);
+        const price = parseFloat(newItems[index].salePrice || 0);
+        newItems[index].total = (quantity * price).toFixed(2);
+      }
+    }
+    // Recalculate total for this item when quantity or salePrice changes
+    else if (field === 'quantity' || field === 'salePrice') {
       const quantity = parseFloat(newItems[index].quantity || 1);
       const price = parseFloat(newItems[index].salePrice || 0);
-      newItems[index].total = (quantity * price).toFixed(2);
+      const newTotal = (quantity * price).toFixed(2);
+      newItems[index].total = newTotal;
+      
+      // Update itemPrice to match the new total to keep fields in sync
+      newItems[index].itemPrice = newTotal;
     }
     
     setItems(newItems);
@@ -280,6 +348,7 @@ const NewReceipt = () => {
         salePrice: matchingItem.price.toString(),
         tax: '0',
         quantity: '1',
+        itemPrice: '', // Price field for quantity calculation
         total: matchingItem.price.toString(),
         costPrice: matchingItem.costPrice ? matchingItem.costPrice.toString() : '0',
         quantityUnit: matchingItem.quantityUnit || 'units',
@@ -303,9 +372,9 @@ const NewReceipt = () => {
     setSelectedProduct('');
     setProductCode('');
     setCustomer('Walk-in Customer');
-    setDiscount('0');
-    setTax('0');
-    setEnterAmount('0');
+    setDiscount('');
+    setTax('');
+    setEnterAmount('');
     setSelectedEmployee(null);
     setError('');
     setSuccess('');
@@ -426,11 +495,12 @@ const NewReceipt = () => {
                 const rate = Math.round(parseFloat(item.salePrice || 0));
                 const amount = Math.round(qty * rate);
                 const name = (item.name || '').replace(/\n/g, '\n');
+                const unit = item.quantityUnit && item.quantityUnit.toLowerCase() !== 'units' ? item.quantityUnit.toUpperCase() : '';
                 return `
                   <tr>
                     <td class="c">${idx + 1}</td>
                     <td class="wrap">${name}</td>
-                    <td class="c">${qty}</td>
+                    <td class="c">${qty} ${unit}</td>
                     <td class="r">${rate}</td>
                     <td class="r">${amount}</td>
                   </tr>
@@ -439,10 +509,12 @@ const NewReceipt = () => {
             </tbody>
           </table>
 
-          <div class="totals">
+            <div class="totals">
             <div class="line"><span>Total</span><span>${parseFloat(totals.totalQuantities).toFixed(2)}</span></div>
             ${parseFloat(discount) > 0 ? `<div class="line"><span>Discount</span><span>${Math.round(parseFloat(discount))}</span></div>` : ''}
+            ${parseFloat(totals.taxAmount) > 0 ? `<div class="line"><span>Tax (${tax || 0}%)</span><span>${Math.round(parseFloat(totals.taxAmount))}</span></div>` : ''}
             <div class="line"><span>Net Total</span><span>${Math.round(parseFloat(totals.payable))}</span></div>
+            ${parseFloat(totals.loanAmount) > 0 ? `<div class="line"><span>Loan</span><span>${Math.round(parseFloat(totals.loanAmount))}</span></div>` : ''}
           </div>
 
           <div class="net">${Math.round(parseFloat(totals.payable))}</div>
@@ -467,7 +539,7 @@ const NewReceipt = () => {
         }
       }, 1000);
     }, 250);
-  }, [discount, items, shopData, totals, transactionId]);
+  }, [discount, items, shopData, tax, totals, transactionId]);
 
   // Handle form submission
   const handleSubmit = useCallback(async (e) => {
@@ -510,12 +582,30 @@ const NewReceipt = () => {
         discount: parseFloat(discount) || 0,
         paymentMethod: 'Cash',
         cashGiven: parseFloat(enterAmount) || 0,
-        change: parseFloat(enterAmount) - parseFloat(totals.payable) || 0,
+        change: (parseFloat(enterAmount) || 0) - Math.max(parseFloat(totals.payable) - (parseFloat(loanAmount || 0) || 0), 0),
         employeeName: selectedEmployee ? selectedEmployee.name : null,
-        employeeId: selectedEmployee ? selectedEmployee.id : null
+        employeeId: selectedEmployee ? selectedEmployee.id : null,
+        customerName: customer,
+        isLoan: (parseFloat(loanAmount || 0) || 0) > 0,
+        loanAmount: Math.max(parseFloat(loanAmount || 0) || 0, 0)
       };
       
       const receiptId = await saveReceipt(receiptData);
+      if ((parseFloat(loanAmount || 0) || 0) > 0 && customer && customer !== 'Walk-in Customer') {
+        try {
+          await addDoc(collection(db, 'customerLoans'), {
+            shopId: activeShopId,
+            customerName: customer,
+            receiptId,
+            transactionId,
+            amount: Math.max(parseFloat(loanAmount || 0) || 0, 0),
+            timestamp: new Date().toISOString(),
+            status: 'outstanding'
+          });
+        } catch (e) {
+          console.error('Failed to record customer loan', e);
+        }
+      }
       
       // Update stock
       await updateStockQuantity(activeShopId, receiptItems.map(item => ({
@@ -563,16 +653,29 @@ const NewReceipt = () => {
     const handleKeyPress = (e) => {
       if (e.key === 'Enter' && !loading && items.length > 0) {
         const activeElement = document.activeElement;
-        const isInputField = activeElement && (
-          activeElement.tagName === 'INPUT' || 
-          activeElement.tagName === 'SELECT' ||
-          activeElement.tagName === 'TEXTAREA'
+        
+        // Check if we're in Product Select or Barcode field
+        // These fields have their own Enter handlers to add items
+        const isProductSelect = activeElement && (
+          activeElement.closest('.select__control') !== null ||
+          activeElement.closest('[class*="select"]') !== null ||
+          activeElement.closest('[id*="react-select"]') !== null
         );
-
-        if (!isInputField) {
-          e.preventDefault();
-          handleSubmit(e);
+        const isBarcodeField = activeElement && activeElement === barcodeInputRef.current;
+        
+        // If in Product Select with selected product, let its handler work (it will add item)
+        if (isProductSelect && selectedProduct) {
+          return; // Let the product select handler work
         }
+        
+        // If in Barcode field with code, let its handler work (it will add item)
+        if (isBarcodeField && productCode.trim() !== '') {
+          return; // Let the barcode handler work
+        }
+        
+        // For all other fields (including empty barcode/product select), trigger Pay & Save
+        e.preventDefault();
+        handleSubmit(e);
       }
     };
 
@@ -580,7 +683,7 @@ const NewReceipt = () => {
     return () => {
       document.removeEventListener('keydown', handleKeyPress);
     };
-  }, [loading, items, handleSubmit]);
+  }, [loading, items, handleSubmit, selectedProduct, productCode]);
 
   // Get product options for select
   const productOptions = stockLoaded ? 
@@ -590,15 +693,20 @@ const NewReceipt = () => {
   const employeeOptions = employeesLoaded ? 
     employees.map(emp => ({ value: emp.id, label: emp.name })) : [];
 
+  const customerOptions = customersLoaded 
+    ? [{ value: 'Walk-in Customer', label: 'Walk-in Customer' }, ...customers.map(c => ({ value: c.name, label: c.name }))]
+    : [{ value: 'Walk-in Customer', label: 'Walk-in Customer' }];
+
 
   return (
     <>
       <MainNavbar />
-      <Container fluid className="pos-content">
+      <Container fluid className="pos-content" style={{ padding: '0.5rem 1rem' }}>
         <PageHeader
           title="New Receipt"
           icon="bi-receipt"
           subtitle={`Create a new sale invoice. Transaction ID: ${transactionId}`}
+          style={{ marginBottom: '0.5rem' }}
         >
           <div className="hero-metrics__item">
             <span className="hero-metrics__label">Items</span>
@@ -618,23 +726,23 @@ const NewReceipt = () => {
           </div>
         </PageHeader>
 
-        {error && <Alert variant="danger" className="mb-3">{error}</Alert>}
-        {success && <Alert variant="success" className="mb-3">{success}</Alert>}
+        {error && <Alert variant="danger" className="mb-2 py-2">{error}</Alert>}
+        {success && <Alert variant="success" className="mb-2 py-2">{success}</Alert>}
 
-        <Row className="g-4">
+        <Row className="g-2">
           {/* Left Column - Product Selection & Cart */}
           <Col lg={8}>
             {/* Product Selection Card */}
-            <Card className="mb-4 pos-card">
-              <Card.Body>
-                <h5 className="mb-4 d-flex align-items-center gap-2">
+            <Card className="mb-2 pos-card">
+              <Card.Body className="p-3">
+                <h6 className="mb-2 d-flex align-items-center gap-2">
                   <i className="bi bi-cart-plus text-primary"></i>
                   Add Products
-                </h5>
-                <Row className="g-3">
+                </h6>
+                <Row className="g-2">
                   <Col md={6}>
-                    <Form.Group>
-                      <Form.Label>Product</Form.Label>
+                    <Form.Group className="mb-2">
+                      <Form.Label className="mb-1" style={{ fontSize: '0.875rem' }}>Product</Form.Label>
                       <Select
                         value={productOptions.find(opt => opt.value === selectedProduct)}
                         onChange={handleProductSelect}
@@ -656,9 +764,10 @@ const NewReceipt = () => {
                     </Form.Group>
                   </Col>
                   <Col md={6}>
-                    <Form.Group>
-                      <Form.Label>Barcode / SKU</Form.Label>
+                    <Form.Group className="mb-2">
+                      <Form.Label className="mb-1" style={{ fontSize: '0.875rem' }}>Barcode / SKU</Form.Label>
                       <Form.Control
+                        ref={barcodeInputRef}
                         type="text"
                         placeholder="Scan or enter barcode"
                         value={productCode}
@@ -673,19 +782,26 @@ const NewReceipt = () => {
                     </Form.Group>
                   </Col>
                   <Col md={6}>
-                    <Form.Group>
-                      <Form.Label>Customer Name</Form.Label>
-                      <Form.Control
-                        type="text"
-                        value={customer}
-                        onChange={(e) => setCustomer(e.target.value)}
+                    <Form.Group className="mb-2">
+                      <Form.Label className="mb-1" style={{ fontSize: '0.875rem' }}>Customer Name</Form.Label>
+                      <Select
+                        value={customerOptions.find(opt => opt.value === customer) || null}
+                        onChange={(option) => setCustomer(option ? option.value : 'Walk-in Customer')}
+                        options={customerOptions}
                         placeholder="Walk-in Customer"
+                        isClearable
+                        className="basic-single"
+                        classNamePrefix="select"
+                        menuPortalTarget={document.body}
+                        styles={{
+                          menuPortal: (base) => ({ ...base, zIndex: 9999 })
+                        }}
                       />
                     </Form.Group>
                   </Col>
                   <Col md={6}>
-                    <Form.Group>
-                      <Form.Label>Employee (Optional)</Form.Label>
+                    <Form.Group className="mb-2">
+                      <Form.Label className="mb-1" style={{ fontSize: '0.875rem' }}>Employee (Optional)</Form.Label>
                       <Select
                         value={selectedEmployee ? employeeOptions.find(opt => opt.value === selectedEmployee.id) : null}
                         onChange={(option) => setSelectedEmployee(option ? employees.find(emp => emp.id === option.value) : null)}
@@ -702,13 +818,14 @@ const NewReceipt = () => {
                     </Form.Group>
                   </Col>
                 </Row>
-                <div className="d-flex gap-2 mt-3 flex-wrap">
+                <div className="d-flex gap-2 mt-2 flex-wrap">
                   <Form.Check
                     type="checkbox"
                     id="autoPrint"
                     label="Auto Print"
                     checked={autoPrint}
                     onChange={(e) => setAutoPrint(e.target.checked)}
+                    style={{ fontSize: '0.875rem' }}
                   />
                 </div>
               </Card.Body>
@@ -716,75 +833,94 @@ const NewReceipt = () => {
 
             {/* Cart Items Card */}
             <Card className="pos-card">
-              <Card.Body>
-                <div className="d-flex justify-content-between align-items-center mb-3">
-                  <h5 className="mb-0 d-flex align-items-center gap-2">
+              <Card.Body className="p-3">
+                <div className="d-flex justify-content-between align-items-center mb-2">
+                  <h6 className="mb-0 d-flex align-items-center gap-2">
                     <i className="bi bi-cart-check text-primary"></i>
                     Cart Items
-                  </h5>
-                  <Badge bg="primary" className="fs-6">{items.length} items</Badge>
+                  </h6>
+                  <Badge bg="primary" style={{ fontSize: '0.75rem' }}>{items.length} items</Badge>
                 </div>
                 {items.length === 0 ? (
-                  <div className="text-center py-5">
-                    <i className="bi bi-cart-x text-muted" style={{ fontSize: '3rem' }}></i>
-                    <p className="text-muted mt-3">No items in cart. Add products to get started.</p>
+                  <div className="text-center py-3">
+                    <i className="bi bi-cart-x text-muted" style={{ fontSize: '2rem' }}></i>
+                    <p className="text-muted mt-2 mb-0" style={{ fontSize: '0.875rem' }}>No items in cart. Add products to get started.</p>
                   </div>
                 ) : (
-                  <div className="table-responsive">
-                    <Table hover className="mb-0">
+                  <div className="table-responsive" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    <Table hover className="mb-0" size="sm">
                       <thead>
                         <tr>
-                          <th>#</th>
-                          <th>Product</th>
-                          <th>Stock</th>
-                          <th>Price</th>
-                          <th>Qty</th>
-                          <th>Total</th>
-                          <th>Action</th>
+                          <th style={{ fontSize: '0.75rem', padding: '0.25rem' }}>#</th>
+                          <th style={{ fontSize: '0.75rem', padding: '0.25rem' }}>Product</th>
+                          <th style={{ fontSize: '0.75rem', padding: '0.25rem' }}>Stock</th>
+                          <th style={{ fontSize: '0.75rem', padding: '0.25rem' }}>Unit Price</th>
+                          <th style={{ fontSize: '0.75rem', padding: '0.25rem' }}>Price (RS)</th>
+                          <th style={{ fontSize: '0.75rem', padding: '0.25rem' }}>Qty</th>
+                          <th style={{ fontSize: '0.75rem', padding: '0.25rem' }}>Total</th>
+                          <th style={{ fontSize: '0.75rem', padding: '0.25rem' }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {items.map((item, index) => (
                           <tr key={index}>
                             <td>{index + 1}</td>
-                            <td>
+                            <td style={{ padding: '0.25rem', fontSize: '0.8rem' }}>
                               <div>
-                                <strong>{item.name}</strong>
-                                {item.code && <small className="text-muted d-block">{item.code}</small>}
+                                <strong style={{ fontSize: '0.8rem' }}>{item.name}</strong>
+                                {item.code && <small className="text-muted d-block" style={{ fontSize: '0.7rem' }}>{item.code}</small>}
                               </div>
                             </td>
-                            <td>
-                              <Badge bg={item.inStock > 0 ? 'success' : 'danger'}>
+                            <td style={{ padding: '0.25rem' }}>
+                              <Badge bg={item.inStock > 0 ? 'success' : 'danger'} style={{ fontSize: '0.7rem' }}>
                                 {item.inStock}
                               </Badge>
                             </td>
-                            <td>
+                            <td style={{ padding: '0.25rem' }}>
                               <Form.Control
                                 type="number"
                                 size="sm"
-                                style={{ width: '100px' }}
+                                style={{ width: '80px', fontSize: '0.8rem', padding: '0.2rem' }}
                                 value={item.salePrice}
-                                onChange={(e) => handleItemChange(index, 'salePrice', e.target.value)}
+                                readOnly
+                                title="Unit price per {item.quantityUnit || 'unit'} (read-only)"
+                                className="bg-light"
                               />
                             </td>
-                            <td>
+                            <td style={{ padding: '0.25rem' }}>
                               <Form.Control
                                 type="number"
                                 size="sm"
-                                style={{ width: '80px' }}
+                                style={{ width: '80px', fontSize: '0.8rem', padding: '0.2rem' }}
+                                value={item.itemPrice || ''}
+                                onChange={(e) => handleItemChange(index, 'itemPrice', e.target.value)}
+                                placeholder="Enter price"
+                                step="0.01"
+                                min="0"
+                                title="Enter price to calculate quantity automatically"
+                              />
+                            </td>
+                            <td style={{ padding: '0.25rem' }}>
+                              <Form.Control
+                                type="number"
+                                size="sm"
+                                style={{ width: '70px', fontSize: '0.8rem', padding: '0.2rem' }}
                                 value={item.quantity}
                                 onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
-                                min="1"
+                                min="0"
+                                step={item.quantityUnit === 'kg' ? '0.001' : '1'}
+                                title="Quantity in {item.quantityUnit || 'units'}"
                               />
                             </td>
-                            <td>
+                            <td style={{ padding: '0.25rem', fontSize: '0.8rem' }}>
                               <strong>{formatCurrency(item.total)}</strong>
                             </td>
-                            <td>
+                            <td style={{ padding: '0.25rem' }}>
                               <Button
                                 variant="outline-danger"
                                 size="sm"
                                 onClick={() => removeItemFromList(index)}
+                                style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem' }}
                               >
                                 <i className="bi bi-trash"></i>
                               </Button>
@@ -801,16 +937,31 @@ const NewReceipt = () => {
 
           {/* Right Column - Payment Summary */}
           <Col lg={4}>
-            <Card className="pos-card sticky-top" style={{ top: '100px' }}>
-              <Card.Body>
-                <h5 className="mb-4 d-flex align-items-center gap-2">
+            <Card className="pos-card sticky-top" style={{ top: '80px' }}>
+              <Card.Body className="p-3">
+                <h6 className="mb-2 d-flex align-items-center gap-2">
                   <i className="bi bi-cash-stack text-success"></i>
                   Payment Summary
-                </h5>
+                </h6>
 
-                <div className="mb-4">
-                  <Form.Group className="mb-3">
-                    <Form.Label>Discount (RS)</Form.Label>
+                <div className="mb-2">
+                  <Form.Group className="mb-2">
+                    <Form.Label className="mb-1" style={{ fontSize: '0.875rem' }}>Loan Amount (RS)</Form.Label>
+                    <Form.Control
+                      type="number"
+                      value={loanAmount}
+                      onChange={(e) => setLoanAmount(e.target.value)}
+                      placeholder="0.00"
+                      min="0"
+                      step="0.01"
+                    />
+                    <Form.Text className="text-muted" style={{ fontSize: '0.7rem' }}>Optional. If provided, cash change is computed on payable minus loan.</Form.Text>
+                  </Form.Group>
+                </div>
+
+                <div className="mb-2">
+                  <Form.Group className="mb-2">
+                    <Form.Label className="mb-1" style={{ fontSize: '0.875rem' }}>Discount (RS)</Form.Label>
                     <Form.Control
                       type="number"
                       value={discount}
@@ -820,40 +971,44 @@ const NewReceipt = () => {
                       step="0.01"
                     />
                   </Form.Group>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Tax (RS)</Form.Label>
+                  <Form.Group className="mb-2">
+                    <Form.Label className="mb-1" style={{ fontSize: '0.875rem' }}>Tax (%)</Form.Label>
                     <Form.Control
                       type="number"
                       value={tax}
                       onChange={(e) => setTax(e.target.value)}
-                      placeholder="0.00"
+                      placeholder="0"
                       min="0"
+                      max="100"
                       step="0.01"
                     />
+                    <Form.Text className="text-muted" style={{ fontSize: '0.7rem' }}>
+                      Tax percentage will be calculated on the subtotal (after discount)
+                    </Form.Text>
                   </Form.Group>
                 </div>
 
-                <div className="border-top pt-3 mb-3">
-                  <div className="d-flex justify-content-between mb-2">
-                    <span className="text-muted">Subtotal:</span>
-                    <strong>{formatCurrency(totals.totalAmount)}</strong>
+                <div className="border-top pt-2 mb-2">
+                  <div className="d-flex justify-content-between mb-1">
+                    <span className="text-muted" style={{ fontSize: '0.8rem' }}>Subtotal:</span>
+                    <strong style={{ fontSize: '0.8rem' }}>{formatCurrency(totals.totalAmount)}</strong>
                   </div>
-                  <div className="d-flex justify-content-between mb-2">
-                    <span className="text-muted">Discount:</span>
-                    <span className="text-danger">-{formatCurrency(discount)}</span>
+                  <div className="d-flex justify-content-between mb-1">
+                    <span className="text-muted" style={{ fontSize: '0.8rem' }}>Discount:</span>
+                    <span className="text-danger" style={{ fontSize: '0.8rem' }}>-{formatCurrency(discount)}</span>
                   </div>
-                  <div className="d-flex justify-content-between mb-2">
-                    <span className="text-muted">Tax:</span>
-                    <span>+{formatCurrency(tax)}</span>
+                  <div className="d-flex justify-content-between mb-1">
+                    <span className="text-muted" style={{ fontSize: '0.8rem' }}>Tax ({tax || 0}%):</span>
+                    <span style={{ fontSize: '0.8rem' }}>+{formatCurrency(totals.taxAmount)}</span>
                   </div>
-                  <div className="d-flex justify-content-between mb-3 pt-2 border-top">
-                    <span className="fw-bold">Total Payable:</span>
-                    <strong className="text-primary fs-5">{formatCurrency(totals.payable)}</strong>
+                  <div className="d-flex justify-content-between mb-2 pt-1 border-top">
+                    <span className="fw-bold" style={{ fontSize: '0.9rem' }}>Total Payable:</span>
+                    <strong className="text-primary" style={{ fontSize: '1rem' }}>{formatCurrency(totals.payable)}</strong>
                   </div>
                 </div>
 
-                <Form.Group className="mb-3">
-                  <Form.Label>Amount Received</Form.Label>
+                <Form.Group className="mb-2">
+                  <Form.Label className="mb-1" style={{ fontSize: '0.875rem' }}>Amount Received</Form.Label>
                   <Form.Control
                     type="number"
                     value={enterAmount}
@@ -861,30 +1016,38 @@ const NewReceipt = () => {
                     placeholder="0.00"
                     min="0"
                     step="0.01"
-                    className="fs-5"
+                    style={{ fontSize: '0.9rem' }}
                   />
                 </Form.Group>
 
-                <div className="border-top pt-3 mb-4">
-                  <div className="d-flex justify-content-between mb-2">
-                    <span className="text-muted">Received:</span>
-                    <strong>{formatCurrency(totals.receivedAmount)}</strong>
+                <div className="border-top pt-2 mb-2">
+                  <div className="d-flex justify-content-between mb-1">
+                    <span className="text-muted" style={{ fontSize: '0.8rem' }}>Received:</span>
+                    <strong style={{ fontSize: '0.8rem' }}>{formatCurrency(totals.receivedAmount)}</strong>
                   </div>
                   <div className="d-flex justify-content-between">
-                    <span className="fw-bold">Change:</span>
-                    <strong className={`fs-5 ${parseFloat(totals.balance) >= 0 ? 'text-success' : 'text-danger'}`}>
+                    <span className="fw-bold" style={{ fontSize: '0.9rem' }}>Change:</span>
+                    <strong className={`${parseFloat(totals.balance) >= 0 ? 'text-success' : 'text-danger'}`} style={{ fontSize: '1rem' }}>
                       {formatCurrency(totals.balance)}
                     </strong>
                   </div>
+                  {parseFloat(totals.loanAmount) > 0 && (
+                    <div className="d-flex justify-content-between mt-1">
+                      <span className="fw-bold" style={{ fontSize: '0.9rem' }}>Loan:</span>
+                      <strong className="text-danger" style={{ fontSize: '0.9rem' }}>
+                        {formatCurrency(totals.loanAmount)}
+                      </strong>
+                    </div>
+                  )}
                 </div>
 
                 <div className="d-grid gap-2">
                   <Button
                     variant="success"
-                    size="lg"
+                    size="sm"
                     onClick={handleSubmit}
                     disabled={loading || items.length === 0}
-                    className="mb-2"
+                    className="mb-1"
                   >
                     {loading ? (
                       <>
@@ -900,6 +1063,7 @@ const NewReceipt = () => {
                   </Button>
                   <Button
                     variant="outline-secondary"
+                    size="sm"
                     onClick={resetForm}
                     disabled={loading}
                   >
@@ -908,6 +1072,7 @@ const NewReceipt = () => {
                   </Button>
                   <Button
                     variant="outline-primary"
+                    size="sm"
                     onClick={() => navigate('/receipts')}
                   >
                     <i className="bi bi-list-ul me-2"></i>

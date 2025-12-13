@@ -9,7 +9,7 @@ import { addSalaryPayment } from '../utils/salaryUtils';
 import { Translate, useTranslatedAttribute } from '../utils';
 
 const AddSalaryPayment = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, activeShopId } = useAuth();
   const navigate = useNavigate();
   
   // Get translations for attributes
@@ -32,12 +32,12 @@ const AddSalaryPayment = () => {
   // Fetch employees for the shop
   useEffect(() => {
     const fetchEmployees = async () => {
-      if (!currentUser) return;
+      if (!currentUser || !activeShopId) return;
       
       try {
         setEmployeesLoading(true);
         const employeesRef = collection(db, 'employees');
-        const employeesQuery = query(employeesRef, where('shopId', '==', currentUser.uid));
+        const employeesQuery = query(employeesRef, where('shopId', '==', activeShopId));
         const snapshot = await getDocs(employeesQuery);
         
         const employeesList = snapshot.docs.map(doc => ({
@@ -66,7 +66,7 @@ const AddSalaryPayment = () => {
     };
     
     fetchEmployees();
-  }, [currentUser]);
+  }, [currentUser, activeShopId]);
   
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -101,6 +101,11 @@ const AddSalaryPayment = () => {
       setError(getTranslatedAttr('requiredFieldsError', 'Employee, amount, and payment date are required'));
       return;
     }
+
+    if (!activeShopId) {
+      setError('Please select a branch before adding a salary payment.');
+      return;
+    }
     
     if (isNaN(parseFloat(formData.amount)) || parseFloat(formData.amount) <= 0) {
       setError(getTranslatedAttr('invalidAmount', 'Please enter a valid amount'));
@@ -115,7 +120,7 @@ const AddSalaryPayment = () => {
       await addSalaryPayment({
         ...formData,
         amount: parseFloat(formData.amount),
-        shopId: currentUser.uid
+        shopId: activeShopId
       });
       
       navigate('/salary-management');

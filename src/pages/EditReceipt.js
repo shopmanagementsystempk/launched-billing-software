@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import MainNavbar from '../components/Navbar';
 import { getReceiptById, updateReceipt, formatCurrency } from '../utils/receiptUtils';
+import { formatDisplayDate } from '../utils/dateUtils';
 import { db } from '../firebase/config';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import Select from 'react-select';
@@ -12,7 +13,7 @@ import '../styles/select.css';
 
 const EditReceipt = () => {
   const { id } = useParams();
-  const { currentUser } = useAuth();
+  const { currentUser, activeShopId } = useAuth();
   const [receipt, setReceipt] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -32,13 +33,13 @@ const EditReceipt = () => {
 
   // Fetch employees
   useEffect(() => {
-    if (currentUser) {
+    if (currentUser && activeShopId) {
       const fetchEmployees = async () => {
         try {
           const employeesRef = collection(db, 'employees');
           const employeesQuery = query(
             employeesRef,
-            where('shopId', '==', currentUser.uid)
+            where('shopId', '==', activeShopId)
           );
           const snapshot = await getDocs(employeesQuery);
           const employeesList = snapshot.docs.map(doc => ({
@@ -54,7 +55,7 @@ const EditReceipt = () => {
       };
       fetchEmployees();
     }
-  }, [currentUser]);
+  }, [currentUser, activeShopId]);
 
   useEffect(() => {
     // Create a non-async function for useEffect
@@ -63,7 +64,7 @@ const EditReceipt = () => {
         getReceiptById(id)
           .then(receiptData => {
             // Check if receipt belongs to current user
-            if (receiptData.shopId !== currentUser.uid) {
+            if (receiptData.shopId !== activeShopId) {
               throw new Error('You do not have permission to edit this receipt');
             }
             
@@ -86,7 +87,7 @@ const EditReceipt = () => {
     };
 
     fetchReceipt();
-  }, [id, currentUser]);
+  }, [id, currentUser, activeShopId]);
 
   // Set selected employee when both receipt and employees are loaded
   useEffect(() => {
@@ -271,7 +272,7 @@ const EditReceipt = () => {
                     <Form.Label>Date</Form.Label>
                     <Form.Control 
                       type="text" 
-                      value={new Date(receipt.timestamp).toLocaleString()} 
+                      value={formatDisplayDate(receipt.timestamp)} 
                       disabled 
                     />
                   </Form.Group>

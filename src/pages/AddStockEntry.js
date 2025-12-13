@@ -9,11 +9,11 @@ import { getShopStock, addStockToItem } from '../utils/stockUtils';
 import { formatDisplayDate } from '../utils/dateUtils';
 
 const AddStockEntry = () => {
-  const { currentUser, shopData } = useAuth();
+  const { currentUser, shopData, activeShopId } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [stock, setStock] = useState([]);
-  const [rows, setRows] = useState([{ item: null, quantity: '', costPrice: '', expiryDate: '' }]);
+  const [rows, setRows] = useState([{ item: null, quantity: '', costPrice: '', expiryDate: '', lowStockAlert: '' }]);
   const [supplier, setSupplier] = useState('');
   const [note, setNote] = useState('');
   const [purchaseDate, setPurchaseDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -22,9 +22,9 @@ const AddStockEntry = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!currentUser) return;
-    getShopStock(currentUser.uid).then(setStock);
-  }, [currentUser]);
+    if (!currentUser || !activeShopId) return;
+    getShopStock(activeShopId).then(setStock);
+  }, [currentUser, activeShopId]);
 
   const options = useMemo(
     () => stock.map(s => ({ value: s.id, label: s.name })),
@@ -37,7 +37,14 @@ const AddStockEntry = () => {
     if (pre && rows?.length === 1) {
       const opt = options.find(o => o.value === pre);
       if (opt) {
-        setRows([{ item: opt, quantity: '', costPrice: '', expiryDate: '' }]);
+        const selectedStockItem = stock.find(s => s.id === pre);
+        setRows([{ 
+          item: opt, 
+          quantity: '', 
+          costPrice: '', 
+          expiryDate: '',
+          lowStockAlert: selectedStockItem?.lowStockAlert?.toString() || ''
+        }]);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -61,7 +68,7 @@ const AddStockEntry = () => {
     });
   };
 
-  const addRow = () => setRows(prev => [...prev, { item: null, quantity: '', costPrice: '', expiryDate: '' }]);
+  const addRow = () => setRows(prev => [...prev, { item: null, quantity: '', costPrice: '', expiryDate: '', lowStockAlert: '' }]);
   const removeRow = (idx) => setRows(prev => prev.filter((_, i) => i !== idx));
 
   const handleSubmit = async (e) => {
@@ -70,22 +77,24 @@ const AddStockEntry = () => {
     setSuccess('');
     const validRows = rows.filter(r => r.item && parseFloat(r.quantity) > 0);
     if (validRows.length === 0) { setError('Add at least one item and quantity'); return; }
+    if (!activeShopId) { setError('Select a branch before adding stock.'); return; }
     setLoading(true);
     try {
       // Process all rows
       for (const r of validRows) {
-        await addStockToItem(currentUser.uid, r.item.value, parseFloat(r.quantity), {
+        await addStockToItem(activeShopId, r.item.value, parseFloat(r.quantity), {
           costPrice: r.costPrice,
           supplier,
           note,
           expiryDate: r.expiryDate,
-          purchaseDate
+          purchaseDate,
+          lowStockAlert: r.lowStockAlert && r.lowStockAlert.trim() ? parseFloat(r.lowStockAlert) : undefined
         });
       }
       setSuccess('Stock added successfully');
       printInvoice(validRows);
       // reset
-      setRows([{ item: null, quantity: '', costPrice: '', expiryDate: '' }]);
+      setRows([{ item: null, quantity: '', costPrice: '', expiryDate: '', lowStockAlert: '' }]);
       setSupplier('');
       setNote('');
       setPurchaseDate(new Date().toISOString().slice(0, 10));
@@ -233,7 +242,16 @@ const AddStockEntry = () => {
                       <Form.Label>Item</Form.Label>
                       <Select
                         value={r.item}
-                        onChange={(opt) => setRowValue(idx, 'item', opt)}
+                        onChange={(opt) => {
+                          setRowValue(idx, 'item', opt);
+                          // Auto-populate lowStockAlert if item has one
+                          if (opt) {
+                            const selectedStockItem = stock.find(s => s.id === opt.value);
+                            if (selectedStockItem?.lowStockAlert !== undefined && selectedStockItem?.lowStockAlert !== null) {
+                              setRowValue(idx, 'lowStockAlert', selectedStockItem.lowStockAlert.toString());
+                            }
+                          }
+                        }}
                         options={options}
                         placeholder="Select existing item"
                         classNamePrefix="select"
@@ -268,6 +286,22 @@ const AddStockEntry = () => {
                         value={r.expiryDate || ''}
                         onChange={(e) => setRowValue(idx, 'expiryDate', e.target.value)}
                       />
+                    </Col>
+                  </Row>
+                  <Row className="g-3 mt-1">
+                    <Col md={4}>
+                      <Form.Label>Low Stock Alert (Optional)</Form.Label>
+                      <Form.Control
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={r.lowStockAlert || ''}
+                        onChange={(e) => setRowValue(idx, 'lowStockAlert', e.target.value)}
+                        placeholder="Minimum quantity"
+                      />
+                      <Form.Text className="text-muted" style={{ fontSize: '0.75rem' }}>
+                        Alert when stock falls below this quantity
+                      </Form.Text>
                     </Col>
                   </Row>
                   <div className="d-flex justify-content-end mt-3">

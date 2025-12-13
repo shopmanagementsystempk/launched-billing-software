@@ -9,7 +9,7 @@ import './GuestNewReceipt.css';
 import '../styles/select.css';
 
 function GuestNewReceipt() {
-  const { currentUser, isGuest } = useAuth();
+  const { currentUser, isGuest, activeShopId } = useAuth();
   const navigate = useNavigate();
   
   // Guest-specific state
@@ -50,7 +50,7 @@ function GuestNewReceipt() {
     // Load shop data for receipt
     const loadShopData = async () => {
       try {
-        const shopQuery = query(collection(db, 'shops'), where('userId', '==', currentUser.uid));
+        const shopQuery = query(collection(db, 'shops'), where('userId', '==', activeShopId || currentUser.uid));
         const shopSnapshot = await getDocs(shopQuery);
         
         if (!shopSnapshot.empty) {
@@ -73,13 +73,13 @@ function GuestNewReceipt() {
 
   // Fetch employees
   useEffect(() => {
-    if (currentUser && isGuest) {
+    if (currentUser && isGuest && activeShopId) {
       const fetchEmployees = async () => {
         try {
           const employeesRef = collection(db, 'employees');
           const employeesQuery = query(
             employeesRef,
-            where('shopId', '==', currentUser.uid)
+            where('shopId', '==', activeShopId)
           );
           const snapshot = await getDocs(employeesQuery);
           const employeesList = snapshot.docs.map(doc => ({
@@ -95,7 +95,7 @@ function GuestNewReceipt() {
       };
       fetchEmployees();
     }
-  }, [currentUser, isGuest]);
+  }, [currentUser, isGuest, activeShopId]);
 
   // Calculate totals
   useEffect(() => {
@@ -149,6 +149,10 @@ function GuestNewReceipt() {
         throw new Error('Please add at least one valid item');
       }
 
+      if (!activeShopId) {
+        throw new Error('Select a branch before creating a receipt.');
+      }
+
       const receiptNum = receiptNumber || generateReceiptNumber();
       
       const receiptData = {
@@ -161,6 +165,7 @@ function GuestNewReceipt() {
         tax: tax,
         total: total,
         userId: currentUser.uid,
+        shopId: activeShopId,
         shopName: shopData.name,
         shopAddress: shopData.address,
         shopPhone: shopData.phone,

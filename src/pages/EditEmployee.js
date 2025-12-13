@@ -9,7 +9,7 @@ import PageHeader from '../components/PageHeader';
 import { v4 as uuidv4 } from 'uuid';
 
 const EditEmployee = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, activeShopId } = useAuth();
   const navigate = useNavigate();
   const { id } = useParams();
   
@@ -37,7 +37,7 @@ const EditEmployee = () => {
           const employeeData = employeeDoc.data();
           
           // Verify that this employee belongs to the current shop
-          if (employeeData.shopId !== currentUser.uid) {
+          if (employeeData.shopId !== activeShopId) {
             setError('You do not have permission to edit this employee');
             setFetchLoading(false);
             return;
@@ -64,10 +64,10 @@ const EditEmployee = () => {
       }
     };
     
-    if (id && currentUser) {
+    if (id && currentUser && activeShopId) {
       fetchEmployee();
     }
-  }, [id, currentUser]);
+  }, [id, currentUser, activeShopId]);
   
   const handleChange = (e) => {
     const { name, value } = e.target;

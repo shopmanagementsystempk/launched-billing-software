@@ -91,7 +91,7 @@ const MarkAttendance = () => {
   // Check for existing attendance records for this date
   useEffect(() => {
     const checkExistingAttendance = async () => {
-      if (!currentUser) {
+      if (!currentUser || !activeShopId) {
         setLoading(false);
         setAttendanceData([]);
         return;
@@ -112,7 +112,7 @@ const MarkAttendance = () => {
         // Query all attendance records for this shop
         const attendanceQuery = query(
           attendanceRef,
-          where('shopId', '==', currentUser.uid)
+          where('shopId', '==', activeShopId)
         );
         
         const snapshot = await getDocs(attendanceQuery);
@@ -187,16 +187,16 @@ const MarkAttendance = () => {
       const batch = [];
       
       for (const record of attendanceData) {
-        const attendanceRecord = {
-          employeeId: record.employeeId,
-          shopId: currentUser.uid,
-          date: selectedDate,
-          status: record.status,
-          checkIn: record.checkIn,
-          checkOut: record.checkOut,
-          notes: record.notes,
-          updatedAt: new Date().toISOString()
-        };
+          const attendanceRecord = {
+            employeeId: record.employeeId,
+            shopId: activeShopId,
+            date: selectedDate,
+            status: record.status,
+            checkIn: record.checkIn,
+            checkOut: record.checkOut,
+            notes: record.notes,
+            updatedAt: new Date().toISOString()
+          };
         
         if (record.recordId) {
           // Update existing record

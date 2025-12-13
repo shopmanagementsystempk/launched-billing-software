@@ -19,6 +19,7 @@ const EditStockItem = () => {
   const [supplier, setSupplier] = useState('');
   const [sku, setSku] = useState('');
   const [barcode, setBarcode] = useState('');
+  const [lowStockAlert, setLowStockAlert] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [itemLoading, setItemLoading] = useState(true);
@@ -43,12 +44,12 @@ const EditStockItem = () => {
 
   // Fetch stock item data
   useEffect(() => {
-    if (!currentUser || !id) return;
+    if (!currentUser || !id || !activeShopId) return;
     
     getStockItemById(id)
       .then(item => {
-        // Check if item belongs to current user
-        if (item.shopId !== currentUser.uid) {
+        // Check if item belongs to selected branch
+        if (item.shopId !== activeShopId) {
           throw new Error('You do not have permission to edit this item');
         }
         
@@ -63,6 +64,7 @@ const EditStockItem = () => {
         setSupplier(item.supplier || '');
         setSku(item.sku || '');
         setBarcode(item.barcode || item.sku || ''); // Load existing barcode or SKU
+        setLowStockAlert(item.lowStockAlert?.toString() || ''); // Load existing low stock alert
       })
       .catch(error => {
         setError('Failed to load item: ' + error.message);
@@ -71,7 +73,7 @@ const EditStockItem = () => {
       .finally(() => {
         setItemLoading(false);
       });
-  }, [id, currentUser]);
+  }, [id, currentUser, activeShopId]);
 
   const fetchCategories = useCallback(() => {
     if (!activeShopId) return;
@@ -198,6 +200,12 @@ const EditStockItem = () => {
       return;
     }
     
+    if (lowStockAlert && (isNaN(parseFloat(lowStockAlert)) || parseFloat(lowStockAlert) < 0)) {
+      setError('Low stock alert must be a valid number');
+      setLoading(false);
+      return;
+    }
+    
     // Create updated item data
     const itemData = {
       name: name.trim(),
@@ -209,7 +217,8 @@ const EditStockItem = () => {
       costPrice: costPrice ? parseFloat(costPrice) : null,
       supplier: supplier.trim(),
       sku: sku.trim(),
-      barcode: barcode.trim() // Include barcode in the update
+      barcode: barcode.trim(), // Include barcode in the update
+      lowStockAlert: lowStockAlert ? parseFloat(lowStockAlert) : null // Include low stock alert
     };
     
     // Update in Firestore
@@ -418,6 +427,25 @@ const EditStockItem = () => {
                         Generate
                       </Button>
                     </div>
+                  </Form.Group>
+                </Col>
+              </Row>
+              
+              <Row>
+                <Col md={6}>
+                  <Form.Group className="mb-3">
+                    <Form.Label>Low Stock Alert (Optional)</Form.Label>
+                    <Form.Control
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={lowStockAlert}
+                      onChange={(e) => setLowStockAlert(e.target.value)}
+                      placeholder="Minimum quantity"
+                    />
+                    <Form.Text className="text-muted">
+                      Alert when stock falls below this quantity
+                    </Form.Text>
                   </Form.Group>
                 </Col>
               </Row>

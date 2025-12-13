@@ -10,7 +10,7 @@ import { Translate, useTranslatedAttribute } from '../utils';
 import { formatDisplayDate } from '../utils/dateUtils';
 
 const SalaryManagement = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, activeShopId } = useAuth();
   const [salaryRecords, setSalaryRecords] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32,14 +32,14 @@ const SalaryManagement = () => {
   // Fetch salary records and employees data
   useEffect(() => {
     const fetchData = async () => {
-      if (!currentUser) return;
+      if (!currentUser || !activeShopId) return;
       
       try {
         setLoading(true);
         
         // Fetch salary records
         try {
-          const records = await getShopSalaryRecords(currentUser.uid);
+          const records = await getShopSalaryRecords(activeShopId);
           setSalaryRecords(records);
         } catch (err) {
           console.error('Error fetching data:', err);
@@ -50,7 +50,7 @@ const SalaryManagement = () => {
         // Fetch employees for the shop
         try {
           const employeesRef = collection(db, 'employees');
-          const employeesQuery = query(employeesRef, where('shopId', '==', currentUser.uid));
+          const employeesQuery = query(employeesRef, where('shopId', '==', activeShopId));
           const employeesSnapshot = await getDocs(employeesQuery);
           const employeesList = employeesSnapshot.docs.map(doc => ({
             id: doc.id,
@@ -65,7 +65,7 @@ const SalaryManagement = () => {
         
         // Fetch salary statistics
         try {
-          const stats = await getSalaryStatistics(currentUser.uid);
+          const stats = await getSalaryStatistics(activeShopId);
           setStatistics(stats);
         } catch (err) {
           console.error('Error fetching statistics:', err);
@@ -81,7 +81,7 @@ const SalaryManagement = () => {
     };
     
     fetchData();
-  }, [currentUser]);
+  }, [currentUser, activeShopId]);
 
   // Handle delete salary record
   const handleDelete = async (salaryId) => {
@@ -91,7 +91,7 @@ const SalaryManagement = () => {
         setSalaryRecords(salaryRecords.filter(record => record.id !== salaryId));
         
         // Update statistics
-        const stats = await getSalaryStatistics(currentUser.uid);
+        const stats = await getSalaryStatistics(activeShopId);
         setStatistics(stats);
       } catch (err) {
         console.error('Error deleting salary record:', err);

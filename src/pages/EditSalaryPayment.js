@@ -10,7 +10,7 @@ import { Translate, useTranslatedAttribute } from '../utils';
 
 const EditSalaryPayment = () => {
   const { id } = useParams();
-  const { currentUser } = useAuth();
+  const { currentUser, activeShopId } = useAuth();
   const navigate = useNavigate();
   
   // Get translations for attributes
@@ -33,7 +33,7 @@ const EditSalaryPayment = () => {
   // Fetch salary record and employees data
   useEffect(() => {
     const fetchData = async () => {
-      if (!currentUser || !id) return;
+      if (!currentUser || !id || !activeShopId) return;
       
       try {
         setDataLoading(true);
@@ -44,7 +44,7 @@ const EditSalaryPayment = () => {
           salaryRecord = await getSalaryRecordById(id);
           
           // Check if the record belongs to the current user's shop
-          if (salaryRecord.shopId !== currentUser.uid) {
+          if (salaryRecord.shopId !== activeShopId) {
             setError('You do not have permission to edit this record');
             setDataLoading(false);
             return;
@@ -59,7 +59,7 @@ const EditSalaryPayment = () => {
         // Fetch employees for the shop
         try {
           const employeesRef = collection(db, 'employees');
-          const employeesQuery = query(employeesRef, where('shopId', '==', currentUser.uid));
+          const employeesQuery = query(employeesRef, where('shopId', '==', activeShopId));
           const snapshot = await getDocs(employeesQuery);
           
           const employeesList = snapshot.docs.map(doc => ({
@@ -94,7 +94,7 @@ const EditSalaryPayment = () => {
     };
     
     fetchData();
-  }, [currentUser, id]);
+  }, [currentUser, id, activeShopId]);
   
   const handleChange = (e) => {
     const { name, value } = e.target;

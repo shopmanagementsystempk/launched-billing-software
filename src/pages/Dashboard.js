@@ -12,7 +12,7 @@ import { formatDisplayDate } from '../utils/dateUtils';
 import { getDailySalesAndProfit } from '../utils/salesUtils';
 
 const Dashboard = () => {
-  const { currentUser, shopData, isStaff, staffData } = useAuth();
+  const { currentUser, shopData, isStaff, staffData, activeShopId } = useAuth();
   const [receiptCount, setReceiptCount] = useState(0);
   const [recentReceipts, setRecentReceipts] = useState([]);
   const [employeeCount, setEmployeeCount] = useState(0);
@@ -32,12 +32,12 @@ const Dashboard = () => {
 
   // Fetch daily sales and profit data
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !activeShopId) return;
 
     setSalesLoading(true);
     
     // Adding error handling and more informative console messages
-    getDailySalesAndProfit(currentUser.uid)
+    getDailySalesAndProfit(activeShopId)
       .then(data => {
         setTodaySales(data);
       })
@@ -48,19 +48,19 @@ const Dashboard = () => {
       .finally(() => {
         setSalesLoading(false);
       });
-  }, [currentUser]);
+  }, [currentUser, activeShopId]);
 
   useEffect(() => {
     // Convert to non-async function
     const fetchDashboardData = () => {
-      if (!currentUser) return;
+      if (!currentUser || !activeShopId) return;
 
       try {
         // Create a simple query without ordering
         const receiptRef = collection(db, 'receipts');
         const receiptQuery = query(
           receiptRef,
-          where("shopId", "==", currentUser.uid)
+          where("shopId", "==", activeShopId)
         );
         
         getDocs(receiptQuery)
@@ -90,7 +90,7 @@ const Dashboard = () => {
         const employeesRef = collection(db, 'employees');
         const employeesQuery = query(
           employeesRef,
-          where("shopId", "==", currentUser.uid)
+          where("shopId", "==", activeShopId)
         );
         
         getDocs(employeesQuery)
@@ -102,7 +102,7 @@ const Dashboard = () => {
             const attendanceRef = collection(db, 'attendance');
             const attendanceQuery = query(
               attendanceRef,
-              where("shopId", "==", currentUser.uid),
+              where("shopId", "==", activeShopId),
               where("date", "==", today)
             );
             
@@ -140,7 +140,7 @@ const Dashboard = () => {
     };
 
     fetchDashboardData();
-  }, [currentUser]);
+  }, [currentUser, activeShopId]);
 
   // Show staff-specific dashboard if user is staff
   if (isStaff && staffData) {
@@ -546,7 +546,7 @@ const Dashboard = () => {
                   </p>
                 </div>
                 <div className="mt-auto">
-                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap">
+                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap stack-on-mobile">
                     <Button 
                       variant="primary" 
                       onClick={() => navigate('/receipts')}
@@ -602,7 +602,7 @@ const Dashboard = () => {
                   )}
                 </div>
                 <div className="mt-auto">
-                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap">
+                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap stack-on-mobile">
                     <Button 
                       variant="primary" 
                       onClick={() => navigate('/employees')}
@@ -642,7 +642,7 @@ const Dashboard = () => {
                   </h6>
                 </div>
                 <div className="mt-auto">
-                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap">
+                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap stack-on-mobile">
                     <Button 
                       variant="primary" 
                       onClick={() => navigate('/salary-management')}
@@ -682,7 +682,7 @@ const Dashboard = () => {
                   </h6>
                 </div>
                 <div className="mt-auto">
-                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap">
+                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap stack-on-mobile">
                     <Button 
                       variant="primary" 
                       onClick={() => navigate('/expenses')}
@@ -791,6 +791,21 @@ const Dashboard = () => {
           .table-responsive.small-table td, 
           .table-responsive.small-table th {
             padding: 0.3rem;
+          }
+          .table-responsive.small-table .text-truncate {
+            max-width: 60px;
+          }
+        }
+        @media (max-width: 400px) {
+          .table-responsive.small-table {
+            font-size: 0.8rem;
+          }
+          .table-responsive.small-table td, 
+          .table-responsive.small-table th {
+            padding: 0.25rem;
+          }
+          .table-responsive.small-table .text-truncate {
+            max-width: 50px;
           }
         }
         .summary-box { height: 180px; display: flex; flex-direction: column; justify-content: center; }

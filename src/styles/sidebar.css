@@ -25,6 +25,10 @@
   letter-spacing: 0.04em;
   display: block;
   margin-bottom: 0.35rem;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
 }
 
 .sidebar-user-meta {
@@ -325,5 +329,56 @@
 }
 .app-sidebar::-webkit-scrollbar-track {
   background: transparent;
+}
+
+.sidebar-branch-manager {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 0.75rem;
+  margin: 0 0 0.75rem 0;
+  color: #ffffff;
+  width: 100%;
+  box-shadow: 0 6px 18px rgba(11, 31, 78, 0.22);
+}
+
+.sidebar-branch-manager .form-select,
+.sidebar-branch-manager .form-control {
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+  color: #ffffff !important;
+}
+
+.sidebar-branch-manager .form-select option {
+  color: #0b1f4e;
+}
+
+.sidebar-branch-manager .form-select:focus,
+.sidebar-branch-manager .form-control:focus {
+  box-shadow: 0 0 0 0.18rem rgba(255, 255, 255, 0.28);
+}
+
+.sidebar-branch-title {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  display: flex;
+  align-items: center;
+}
+
+.sidebar-branch-manager .btn-link {
+  color: rgba(255, 255, 255, 0.7) !important;
+  text-decoration: none;
+  padding: 0.25rem 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.sidebar-branch-manager .btn-link:hover {
+  color: #ff4444 !important;
+  background-color: rgba(255, 68, 68, 0.15);
+  border-radius: 4px;
+}
+
+.sidebar-branch-manager .bg-light {
+  background-color: rgba(255, 255, 255, 0.15) !important;
 }
 

@@ -11,7 +11,7 @@ import './ViewReceipt.css';
 
 const ViewReceipt = () => {
   const { id } = useParams();
-  const { currentUser } = useAuth();
+  const { currentUser, activeShopId } = useAuth();
   const [receipt, setReceipt] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -25,11 +25,11 @@ const ViewReceipt = () => {
   useEffect(() => {
     // Create a non-async function for useEffect
     const fetchReceipt = () => {
-      if (currentUser && id) {
+      if (currentUser && id && activeShopId) {
         getReceiptById(id)
           .then(receiptData => {
             // Check if receipt belongs to current user
-            if (receiptData.shopId !== currentUser.uid) {
+            if (receiptData.shopId !== activeShopId) {
               throw new Error('You do not have permission to view this receipt');
             }
             
@@ -46,7 +46,7 @@ const ViewReceipt = () => {
     };
 
     fetchReceipt();
-  }, [id, currentUser]);
+  }, [id, currentUser, activeShopId]);
 
   // Updated downloadPdf function to consider custom size
   const downloadPdf = () => {
@@ -421,6 +421,7 @@ const ViewReceipt = () => {
                   <div className="line"><span>Total</span><span>{receipt.items.reduce((s,i)=>s+parseFloat(i.quantity||0),0).toFixed(2)}</span></div>
                   {receipt.discount>0 && (<div className="line"><span>Discount</span><span>{Math.round(parseFloat(receipt.discount))}</span></div>)}
                   <div className="line"><span>Net Total</span><span>{Math.round(parseFloat(receipt.totalAmount))}</span></div>
+                  {receipt.isLoan && (<div className="line"><span>Loan</span><span>{Math.round(parseFloat(receipt.loanAmount||0))}</span></div>)}
                 </div>
                 <div className="net">{Math.round(parseFloat(receipt.totalAmount))}</div>
                 <div className="center sm" style={{marginTop:'8px'}}>Thank you For Shoping !</div>

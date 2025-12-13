@@ -12,7 +12,7 @@ import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
 const SalaryReports = () => {
-  const { currentUser } = useAuth();
+  const { currentUser, activeShopId } = useAuth();
   const [employees, setEmployees] = useState([]);
   const [salaryRecords, setSalaryRecords] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -46,12 +46,12 @@ const SalaryReports = () => {
   // Fetch employees for the shop
   useEffect(() => {
     const fetchEmployees = async () => {
-      if (!currentUser) return;
+      if (!currentUser || !activeShopId) return;
       
       try {
         setLoading(true);
         const employeesRef = collection(db, 'employees');
-        const employeesQuery = query(employeesRef, where('shopId', '==', currentUser.uid));
+        const employeesQuery = query(employeesRef, where('shopId', '==', activeShopId));
         const snapshot = await getDocs(employeesQuery);
         
         const employeesList = snapshot.docs.map(doc => ({
@@ -67,9 +67,14 @@ const SalaryReports = () => {
         setLoading(false);
       }
     };
+
+    if (!activeShopId) {
+      setError('Please select a branch before generating reports.');
+      return;
+    }
     
     fetchEmployees();
-  }, [currentUser]);
+  }, [currentUser, activeShopId]);
   
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -107,11 +112,11 @@ const SalaryReports = () => {
       try {
         if (formData.reportType === 'individual') {
           records = await getShopSalaryRecords(
-            currentUser.uid, 
+            activeShopId, 
             formData.employeeId
           );
         } else {
-          records = await getShopSalaryRecords(currentUser.uid);
+          records = await getShopSalaryRecords(activeShopId);
         }
       } catch (err) {
         console.error('Error fetching salary records:', err);
