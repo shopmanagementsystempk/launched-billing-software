@@ -156,6 +156,15 @@ const NewReceipt = () => {
       item.sku && item.sku.toLowerCase() === data.toLowerCase());
     
     if (matchingItem) {
+      // Block scanning if out of stock
+      if ((parseFloat(matchingItem.quantity || 0)) <= 0) {
+        setError(translations[language]?.outOfStock || 'Out of stock');
+        setTimeout(() => setError(''), 3000);
+        setSelectedProduct('');
+        setProductCode('');
+        return;
+      }
+
       setSelectedProduct(matchingItem.name);
       setProductCode(matchingItem.sku || '');
       
@@ -199,6 +208,14 @@ const NewReceipt = () => {
       item.sku && item.sku.toLowerCase() === code.toLowerCase());
     
     if (matchingItem && code.length > 0) {
+      // Block adding if out of stock
+      if ((parseFloat(matchingItem.quantity || 0)) <= 0) {
+        setError(translations[language]?.outOfStock || 'Out of stock');
+        setTimeout(() => setError(''), 3000);
+        setSelectedProduct('');
+        setProductCode('');
+        return;
+      }
       // Add product to items list
       const existingIndex = items.findIndex(item => 
         item.name.toLowerCase() === matchingItem.name.toLowerCase());
@@ -239,6 +256,15 @@ const NewReceipt = () => {
       const matchingItem = stockItems.find(item => item.name === productName);
       
       if (matchingItem) {
+        // Block selection if out of stock
+        if ((parseFloat(matchingItem.quantity || 0)) <= 0) {
+          setError(translations[language]?.outOfStock || 'Out of stock');
+          setTimeout(() => setError(''), 3000);
+          setSelectedProduct('');
+          setProductCode('');
+          return;
+        }
+
         const itemCode = matchingItem.sku || '';
         setProductCode(itemCode);
         
@@ -352,6 +378,15 @@ const NewReceipt = () => {
     if (!matchingItem) {
       setError('Product not found in stock');
       setTimeout(() => setError(''), 3000);
+      return;
+    }
+    
+    // Block adding if out of stock
+    if ((parseFloat(matchingItem.quantity || 0)) <= 0) {
+      setError(translations[language]?.outOfStock || 'Out of stock');
+      setTimeout(() => setError(''), 3000);
+      setSelectedProduct('');
+      setProductCode('');
       return;
     }
     
@@ -751,7 +786,11 @@ const NewReceipt = () => {
 
   // Get product options for select
   const productOptions = stockLoaded ? 
-    stockItems.map(item => ({ value: item.name, label: item.name })) : [];
+    stockItems.map(item => ({ 
+      value: item.name, 
+      label: item.name + ((parseFloat(item.quantity || 0)) <= 0 ? ` (${translations[language]?.outOfStock || 'Out of stock'})` : ''),
+      quantity: parseFloat(item.quantity || 0)
+    })) : [];
 
   // Get employee options for select
   const employeeOptions = employeesLoaded ? 
