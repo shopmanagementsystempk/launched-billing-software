@@ -30,7 +30,7 @@ const NewReceipt = () => {
   const [tax, setTax] = useState('');
   const [enterAmount, setEnterAmount] = useState('');
   const [loanAmount, setLoanAmount] = useState('');
-  const [transactionId] = useState(generateTransactionId());
+  const [transactionId, setTransactionId] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -69,6 +69,26 @@ const NewReceipt = () => {
       }, 100);
     }
   }, [stockLoaded]);
+
+  // Initialize transaction ID (sequential per shop)
+  useEffect(() => {
+    let isMounted = true;
+    const initTransactionId = async () => {
+      try {
+        if (activeShopId) {
+          const id = await generateTransactionId(activeShopId);
+          if (isMounted) setTransactionId(id);
+        } else {
+          const id = generateTransactionId();
+          if (isMounted) setTransactionId(id);
+        }
+      } catch (err) {
+        if (isMounted) setTransactionId(generateTransactionId());
+      }
+    };
+    initTransactionId();
+    return () => { isMounted = false; };
+  }, [activeShopId]);
 
   // Fetch employees
   useEffect(() => {
@@ -382,7 +402,15 @@ const NewReceipt = () => {
     setError('');
     setSuccess('');
     setSavedReceiptId(null);
-  }, []);
+    // Regenerate a new transaction ID for the next receipt
+    if (activeShopId) {
+      generateTransactionId(activeShopId)
+        .then((id) => setTransactionId(id))
+        .catch(() => setTransactionId(generateTransactionId()));
+    } else {
+      setTransactionId(generateTransactionId());
+    }
+  }, [activeShopId]);
 
   const printReceipt = useCallback(() => {
     const existingIframe = document.getElementById('print-iframe');
